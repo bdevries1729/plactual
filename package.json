@@ -1,0 +1,19 @@
+{
+  "name": "plaid_sync",
+  "version": "1.0.0",
+  "description": "Sync Actual Budget server with banks via Plaid.",
+  "license": "ISC",
+  "author": "Ben DeVries",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "body-parser": "^2.2.2",
+    "express": "^5.2.1",
+    "path": "^0.12.7",
+    "plaid": "^42.2.0"
+  }
+}

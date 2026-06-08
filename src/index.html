@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Connect Your Bank" />
+    
+    <title>Connect Your Bank</title>
+  </head>
+  <body>
+    <button id="link-button">Link Bank Account</button>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+    <script type="text/javascript">
+      (async function($) {
+      var handler = Plaid.create({
+        token: (await $.post('/create_link_token')).link_token,
+        onSuccess: function(public_token, metadata) {
+          $.post('/exchange_public_token', { public_token: public_token });
+        },
+        onExit: (err) => { if (err) console.error(err); }
+      });
+
+      $('#link-button').on('click', function(e) {
+        handler.open();
+      });
+    })(jQuery);
+    </script>
+  </body>
+</html>
