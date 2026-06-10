@@ -1,0 +1,26 @@
+[
+  {
+    "id": "a2b5a4e3-2216-4e50-899d-8c7fd6ce92ba",
+    "actual_account_id": null,
+    "plaid_account_id": "WEB8ZE9r9jtJWgXQ7x7XHpn771zAWGC6XKddw",
+    "account_name": "Plaid Checking",
+    "access_token": "access-sandbox-dbe878d1-3c8a-4341-9252-180c775cedc4",
+    "cursor": null
+  },
+  {
+    "id": "f3c53f04-9481-4c89-9569-062c2b558431",
+    "actual_account_id": null,
+    "plaid_account_id": "AroQgrmjmAcEeVlJbrblS1reeybwAWT9aEbbo",
+    "account_name": "Plaid Saving",
+    "access_token": "access-sandbox-dbe878d1-3c8a-4341-9252-180c775cedc4",
+    "cursor": null
+  },
+  {
+    "id": "f3df7f10-e055-475a-9893-425d591646b8",
+    "actual_account_id": null,
+    "plaid_account_id": "GaV3qam1m9TaEmdlw9wdSN7oorWaKAu6qyVV8",
+    "account_name": "Plaid Cash Management",
+    "access_token": "access-sandbox-dbe878d1-3c8a-4341-9252-180c775cedc4",
+    "cursor": null
+  }
+]

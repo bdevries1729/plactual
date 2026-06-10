@@ -14,9 +14,16 @@
     <script type="text/javascript">
       (async function($) {
       var handler = Plaid.create({
-        token: (await $.post('/create_link_token')).link_token,
-        onSuccess: function(public_token, metadata) {
-          $.post('/exchange_public_token', { public_token: public_token });
+        token: (await $.post('/api/create_link_token')).link_token,
+        onSuccess: function(publicToken, metadata) {
+          $.ajax({
+                    url: '/api/exchange_public_token',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                      public_token: publicToken
+                    })
+                  });
         },
         onExit: (err) => { if (err) console.error(err); }
       });

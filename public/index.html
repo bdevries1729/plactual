@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Plaid Sync</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:          #0c0e14;
+      --surface:     #161924;
+      --surface-2:   #1e2130;
+      --border:      #252840;
+      --accent:      #3b82f6;
+      --accent-dim:  rgba(59, 130, 246, 0.10);
+      --success:     #10b981;
+      --success-dim: rgba(16, 185, 129, 0.10);
+      --danger:      #f43f5e;
+      --danger-dim:  rgba(244,  63,  94, 0.10);
+      --warning:     #f59e0b;
+      --text:        #e2e8f0;
+      --muted:       #5a6480;
+      --radius:      10px;
+      --mono:        'JetBrains Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px 80px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 640px;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      margin-bottom: 32px;
+    }
+
+    .logo {
+      width: 34px;
+      height: 34px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(59, 130, 246, 0.22);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      flex-shrink: 0;
+    }
+
+    h1 {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      margin-left: auto;
+      flex-shrink: 0;
+      transition: background 0.4s, box-shadow 0.4s;
+    }
+    .status-dot.ok {
+      background: var(--success);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+    }
+
+    /* ── Stat cards ── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 15px 16px;
+    }
+
+    .stat-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.9px;
+      color: var(--muted);
+      margin-bottom: 9px;
+    }
+
+    .stat-value {
+      font-family: var(--mono);
+      font-size: 22px;
+      font-weight: 500;
+      line-height: 1;
+    }
+
+    .stat-sub {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 5px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .badge {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 500;
+      padding: 3px 8px;
+      border-radius: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge.sandbox    { background: rgba(245, 158, 11, 0.15); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.25); }
+    .badge.production { background: var(--success-dim);        color: var(--success);  border: 1px solid rgba(16, 185, 129, 0.25); }
+
+    /* ── Section header ── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .section-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.9px;
+      color: var(--muted);
+    }
+
+    /* ── Accounts list ── */
+    .accounts {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    .account-row {
+      display: flex;
+      align-items: center;
+      padding: 13px 15px;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.12s;
+    }
+    .account-row:last-child { border-bottom: none; }
+    .account-row:hover { background: var(--surface-2); }
+
+    .account-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(59, 130, 246, 0.18);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    .account-info { flex: 1; min-width: 0; }
+
+    .account-name {
+      font-size: 14px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .account-id {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .delete-btn {
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 5px 9px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 11px;
+      line-height: 1;
+      transition: all 0.14s;
+      flex-shrink: 0;
+      font-family: inherit;
+    }
+    .delete-btn:hover {
+      border-color: var(--danger);
+      color: var(--danger);
+      background: var(--danger-dim);
+    }
+    .delete-btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+    .empty-state {
+      padding: 36px 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .empty-state .empty-hint {
+      font-size: 12px;
+      margin-top: 5px;
+      color: var(--muted);
+      opacity: 0.7;
+    }
+
+    /* ── Skeleton loader ── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 50%, var(--surface) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 4px;
+    }
+    @keyframes shimmer {
+      0%   { background-position:  200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ── Buttons ── */
+    .actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 0.14s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      letter-spacing: -0.1px;
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover:not(:disabled) { background: #2563eb; }
+
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover:not(:disabled) {
+      border-color: rgba(59, 130, 246, 0.4);
+      color: var(--accent);
+    }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 13px;
+      height: 13px;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.55s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Sync log ── */
+    .sync-log {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.3s ease, margin-top 0.3s ease;
+      margin-top: 0;
+    }
+    .sync-log.open {
+      max-height: 220px;
+      margin-top: 12px;
+    }
+    .sync-log-inner {
+      padding: 14px 16px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--muted);
+      line-height: 1.8;
+      overflow-y: auto;
+      max-height: 220px;
+    }
+    .log-ok  { color: var(--success); }
+    .log-err { color: var(--danger); }
+    .log-dim { color: var(--muted); }
+
+    /* ── Toast ── */
+    #toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 9999;
+      pointer-events: none;
+    }
+
+    .toast {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 11px 15px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+      animation: toastIn 0.18s ease;
+      max-width: 300px;
+      pointer-events: all;
+    }
+    .toast.success { border-color: rgba(16, 185, 129, 0.30); }
+    .toast.error   { border-color: rgba(244,  63,  94, 0.30); }
+    .toast-icon { font-size: 14px; flex-shrink: 0; }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes toastOut {
+      to { opacity: 0; transform: translateY(10px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <header>
+      <div class="logo">⬡</div>
+      <h1>Plaid Sync</h1>
+      <div class="status-dot" id="status-dot" title="Server status"></div>
+    </header>
+
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-label">Accounts</div>
+        <div class="stat-value" id="stat-count">
+          <div class="skeleton" style="width:28px;height:22px;margin-bottom:6px"></div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Environment</div>
+        <div id="stat-env">
+          <div class="skeleton" style="width:68px;height:20px"></div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Auto-Sync</div>
+        <div class="stat-sub" id="stat-cron" style="font-size:13px">
+          <div class="skeleton" style="width:80px;height:14px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <span class="section-title">Linked Accounts</span>
+    </div>
+
+    <div class="accounts" id="accounts-list">
+      <div style="padding:13px 15px;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:center">
+        <div class="skeleton" style="width:30px;height:30px;border-radius:8px;flex-shrink:0"></div>
+        <div style="flex:1">
+          <div class="skeleton" style="width:55%;height:13px;margin-bottom:6px"></div>
+          <div class="skeleton" style="width:38%;height:10px"></div>
+        </div>
+      </div>
+      <div style="padding:13px 15px;display:flex;gap:12px;align-items:center">
+        <div class="skeleton" style="width:30px;height:30px;border-radius:8px;flex-shrink:0"></div>
+        <div style="flex:1">
+          <div class="skeleton" style="width:48%;height:13px;margin-bottom:6px"></div>
+          <div class="skeleton" style="width:34%;height:10px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-primary" id="link-btn" disabled>
+        <span id="link-btn-text">Link Institution</span>
+      </button>
+      <button class="btn btn-secondary" id="sync-btn" disabled>
+        <span id="sync-btn-text">Sync Now</span>
+      </button>
+    </div>
+
+    <div class="sync-log" id="sync-log">
+      <div class="sync-log-inner" id="sync-log-inner"></div>
+    </div>
+
+  </div>
+
+  <div id="toast-container"></div>
+
+  <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+  <script>
+    let plaidHandler = null;
+
+    // ── Toasts ──────────────────────────────────────────────────────────
+    function showToast(message, type = 'info') {
+      const icons = { success: '✓', error: '✕', info: '·' };
+      const el = document.createElement('div');
+      el.className = `toast ${type}`;
+      el.innerHTML = `<span class="toast-icon">${icons[type]}</span><span>${message}</span>`;
+      document.getElementById('toast-container').appendChild(el);
+      setTimeout(() => {
+        el.style.animation = 'toastOut 0.2s ease forwards';
+        el.addEventListener('animationend', () => el.remove());
+      }, 4000);
+    }
+
+    // ── Status ───────────────────────────────────────────────────────────
+    async function loadStatus() {
+      try {
+        const res = await fetch('/api/status');
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        document.getElementById('stat-count').textContent = data.mappings;
+        document.getElementById('stat-env').innerHTML =
+          `<span class="badge ${data.plaid_env}">${data.plaid_env}</span>`;
+        document.getElementById('stat-cron').innerHTML =
+          `<span style="font-family:var(--mono);font-size:12px;color:var(--text)">${data.cron}</span>`;
+        document.getElementById('status-dot').className = 'status-dot ok';
+      } catch {
+        document.getElementById('status-dot').className = 'status-dot';
+        showToast('Cannot reach the server', 'error');
+      }
+    }
+
+    // ── Account list ─────────────────────────────────────────────────────
+    async function loadAccounts() {
+      try {
+        const res = await fetch('/api/mappings');
+        const list = await res.json();
+        const container = document.getElementById('accounts-list');
+
+        if (!list.length) {
+          container.innerHTML = `
+            <div class="empty-state">
+              No accounts linked yet.
+              <div class="empty-hint">Click "Link Institution" to connect your first bank.</div>
+            </div>`;
+          return;
+        }
+
+        container.innerHTML = list.map(m => `
+          <div class="account-row" id="row-${m.id}">
+            <div class="account-icon">🏦</div>
+            <div class="account-info">
+              <div class="account-name">${escHtml(m.account_name)}</div>
+              <div class="account-id">${escHtml(m.plaid_account_id)}</div>
+            </div>
+            <button class="delete-btn" onclick="removeAccount('${m.id}', this)" title="Remove account">
+              Remove
+            </button>
+          </div>`).join('');
+      } catch {
+        showToast('Could not load accounts', 'error');
+      }
+    }
+
+    // ── Remove account ───────────────────────────────────────────────────
+    async function removeAccount(id, btn) {
+      btn.disabled = true;
+      btn.textContent = '…';
+      try {
+        const res = await fetch(`/api/mappings/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error();
+        const row = document.getElementById(`row-${id}`);
+        row.style.transition = 'opacity 0.2s';
+        row.style.opacity = '0';
+        setTimeout(() => { loadAccounts(); loadStatus(); }, 200);
+        showToast('Account removed', 'success');
+      } catch {
+        showToast('Failed to remove account', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Remove';
+      }
+    }
+
+    // ── Plaid Link ───────────────────────────────────────────────────────
+    async function initPlaid() {
+      try {
+        const res = await fetch('/api/create_link_token', { method: 'POST' });
+        if (!res.ok) throw new Error('Could not create link token');
+        const { link_token } = await res.json();
+
+        plaidHandler = Plaid.create({
+          token: link_token,
+          onSuccess: async (publicToken) => {
+            setBtnState('link', 'loading', 'Linking…');
+            try {
+              const r = await fetch('/api/exchange_public_token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ public_token: publicToken }),
+              });
+              const data = await r.json();
+              if (!r.ok) throw new Error(data.error || 'Exchange failed');
+              showToast(`${data.accounts?.length ?? 0} account(s) linked`, 'success');
+              await Promise.all([loadAccounts(), loadStatus()]);
+            } catch (e) {
+              showToast(e.message, 'error');
+              await loadStatus();
+            } finally {
+              setBtnState('link', 'ready');
+            }
+          },
+          onExit: (err) => {
+            if (err) showToast(err.display_message || 'Link exited', 'error');
+          },
+        });
+
+        document.getElementById('link-btn').disabled = false;
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
+    }
+
+    document.getElementById('link-btn').addEventListener('click', () => {
+      plaidHandler?.open();
+    });
+
+    // ── Manual sync ──────────────────────────────────────────────────────
+    document.getElementById('sync-btn').addEventListener('click', async () => {
+      const log    = document.getElementById('sync-log');
+      const logEl  = document.getElementById('sync-log-inner');
+      log.classList.remove('open');
+      setBtnState('sync', 'loading', 'Syncing…');
+
+      try {
+        const res  = await fetch('/api/sync', { method: 'POST' });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Sync failed');
+
+        const lines = data.results.length
+          ? data.results.map(r =>
+              r.error
+                ? `<span class="log-err">✕ ${escHtml(r.mapping.account_name)}: ${escHtml(r.error)}</span>`
+                : `<span class="log-ok">✓ ${escHtml(r.mapping.account_name)}</span>` +
+                  `<span class="log-dim">  +${r.added} added  ~${r.modified} modified  -${r.removed} removed</span>`
+            )
+          : [`<span class="log-dim">No accounts to sync.</span>`];
+
+        logEl.innerHTML = lines.join('\n');
+        log.classList.add('open');
+        showToast('Sync complete', 'success');
+        await loadStatus();
+      } catch (e) {
+        logEl.innerHTML = `<span class="log-err">✕ ${escHtml(e.message)}</span>`;
+        log.classList.add('open');
+        showToast(e.message, 'error');
+        await loadStatus();
+      } finally {
+        setBtnState('sync', 'ready');
+      }
+    });
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+    function setBtnState(which, state, label) {
+      const btn     = document.getElementById(`${which}-btn`);
+      const textEl  = document.getElementById(`${which}-btn-text`);
+      const loading = state === 'loading';
+
+      btn.disabled = loading;
+
+      if (loading) {
+        btn.insertAdjacentHTML('afterbegin', '<div class="spinner" id="spinner-' + which + '"></div>');
+        textEl.textContent = label;
+      } else {
+        document.getElementById(`spinner-${which}`)?.remove();
+        textEl.textContent = which === 'link' ? 'Link Institution' : 'Sync Now';
+      }
+    }
+
+    function escHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // ── Boot ─────────────────────────────────────────────────────────────
+    (async () => {
+      await Promise.all([loadStatus(), loadAccounts()]);
+      document.getElementById('sync-btn').disabled = false;
+      await initPlaid();
+    })();
+  </script>
+</body>
+</html>
