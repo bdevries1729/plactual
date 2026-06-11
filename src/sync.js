@@ -3,11 +3,7 @@ const plaid = require('./plaid');
 const mappings = require('./mappings');
 const { toActualAmount, plaidToActualTransaction } = require('./helpers');
 const fs = require('fs');
-
-const DATA_DIR = process.env.ACTUAL_DATA_DIR || '/data/user-files';
-const SERVER_URL = process.env.ACTUAL_SERVER_URL || 'http://actualbudget:5006';
-const PASSWORD = process.env.ACTUAL_PASSWORD;
-const BUDGET_ID = process.env.ACTUAL_BUDGET_ID;
+const { config } = require('./config') 
 
 // Fetch new transactions for an account. Pass initialCursor=null to fetch all transactions.
 async function fetchPlaidTransactions(accountId, accessToken, initialCursor, retriesLeft = 3) {
@@ -151,14 +147,14 @@ async function runSync() {
     return null;
   }
 
-  if (!fs.existsSync(DATA_DIR)) {
-    console.error(`Actual Budget data directory does not exist: ${DATA_DIR}`);
+  if (!fs.existsSync(config.actual.dataDir)) {
+    console.error(`Actual Budget data directory does not exist: ${config.actual.dataDir}`);
     return { results: [] };
   }
 
   const mappingList = mappings.load();
   if (!mappingList || mappingList.length === 0) {
-    console.log(`No account mappings found. Add some via the UI or ensure the file exists at ${mappings.FILE}`);
+    console.log(`No account mappings found. Add some via the UI or ensure the file exists at ${config.mappingsFile}`);
     return { results: [] };
   }
 
@@ -167,8 +163,8 @@ async function runSync() {
   console.log(`=== Sync started at ${new Date().toISOString()} (${mappingList.length} accounts) ===`);
 
   try {
-    await api.init({ dataDir: DATA_DIR, serverURL: SERVER_URL, password: PASSWORD });
-    await api.downloadBudget(BUDGET_ID);
+    await api.init({ dataDir: config.actual.dataDir, serverURL: config.actual.serverUrl, password: config.actual.password });
+    await api.downloadBudget(config.actual.budgetId);
 
     for (const mapping of mappingList) {
       try {

@@ -1,11 +1,12 @@
 const { PlaidApi, PlaidEnvironments, Configuration } = require('plaid');
+const { config } = require('./config')
 
 const configuration = new Configuration({
-  basePath: PlaidEnvironments[process.env.PLAID_ENV || 'sandbox'],
+  basePath: PlaidEnvironments[config.plaid.environment],
   baseOptions: {
     headers: {
-      'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
-      'PLAID-SECRET': process.env.PLAID_SECRET,
+      'PLAID-CLIENT-ID': config.plaid.clientId,
+      'PLAID-SECRET': config.plaid.secret,
     },
   },
 });

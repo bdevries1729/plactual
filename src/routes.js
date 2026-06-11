@@ -6,14 +6,9 @@ const mappings = require('./mappings');
 const { runSync } = require('./sync');
 const fs = require('fs');
 const { toActualAmount } = require('./helpers');
+const { config } = require('./config')
 
 const router = express.Router();
-
-const DATA_DIR = process.env.ACTUAL_DATA_DIR || '/data/user-files';
-const SERVER_URL = process.env.ACTUAL_SERVER_URL || 'http://actualbudget:5006';
-const PASSWORD = process.env.ACTUAL_PASSWORD;
-const BUDGET_ID = process.env.ACTUAL_BUDGET_ID;
-
 
 router.get('/mappings', (req, res) => {
   const list = mappings.load().map(({ access_token, ...rest }) => rest); // omit raw tokens for safety
@@ -55,9 +50,9 @@ router.post('/exchange_public_token', async (req, res) => {
       item_id: itemId
     } = exchangeRes.data;
 
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    await api.init({ dataDir: DATA_DIR, serverURL: SERVER_URL, password: PASSWORD });
-    await api.downloadBudget(BUDGET_ID);
+    fs.mkdirSync(config.actual.dataDir, { recursive: true });
+    await api.init({ dataDir: config.actual.dataDir, serverURL: config.actual.serverUrl, password: config.actual.password });
+    await api.downloadBudget(config.actual.budgetId);
 
     const accountsRes = await plaid.accountsGet({ access_token: accessToken });
 
@@ -108,8 +103,8 @@ router.get('/status', (req, res) => {
   const mappingList = mappings.load();
   res.json({
     mappings:  mappingList.length,
-    cron:      process.env.CRON_SCHEDULE || '0 */6 * * *',
-    plaid_env: process.env.PLAID_ENV || 'sandbox',
+    cron:      config.cronSchedule,
+    plaid_env: config.plaid.environment,
   });
 });
 
