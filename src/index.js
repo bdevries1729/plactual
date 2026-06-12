@@ -13,7 +13,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 app.use('/api', routes);
 
 app.listen(config.port, () => {
-  console.log(`\nplaid_sync running at http://localhost:${PORT}`);
+  console.log(`\nplaid_sync running at http://localhost:${config.port}`);
   console.log(`Plaid env : ${config.plaid.environment}`);
   console.log(`Actual URL: ${config.actual.serverUrl}`);
   console.log(`Schedule  : ${config.cronSchedule}\n`);

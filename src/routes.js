@@ -23,9 +23,9 @@ router.delete('/mappings/:id', (req, res) => {
 router.post('/create_link_token', async (req, res) => {
   const linkTokenRequest = {
     user: {
-      client_user_id: 'budget-sync-user',
+      client_user_id: 'plaid-sync-user',
     },
-    client_name: 'Budget Sync',
+    client_name: 'Plaid Sync',
     products: [Products.Auth, Products.Transactions],
     country_codes: ['US'],
     language: 'en',
@@ -51,7 +51,7 @@ router.post('/exchange_public_token', async (req, res) => {
     } = exchangeRes.data;
 
     fs.mkdirSync(config.actual.dataDir, { recursive: true });
-    await api.init({ dataDir: config.actual.dataDir, serverURL: config.actual.serverUrl, password: config.actual.password });
+    await api.init({ verbose: config.debug, dataDir: config.actual.dataDir, serverURL: config.actual.serverUrl, password: config.actual.password });
     await api.downloadBudget(config.actual.budgetId);
 
     const accountsRes = await plaid.accountsGet({ access_token: accessToken });

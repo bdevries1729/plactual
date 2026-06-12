@@ -163,7 +163,7 @@ async function runSync() {
   console.log(`=== Sync started at ${new Date().toISOString()} (${mappingList.length} accounts) ===`);
 
   try {
-    await api.init({ dataDir: config.actual.dataDir, serverURL: config.actual.serverUrl, password: config.actual.password });
+    await api.init({ verbose: config.debug, dataDir: config.actual.dataDir, serverURL: config.actual.serverUrl, password: config.actual.password });
     await api.downloadBudget(config.actual.budgetId);
 
     for (const mapping of mappingList) {

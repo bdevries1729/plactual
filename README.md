@@ -6,6 +6,7 @@
 
 - `PORT` (optional) - default is `3131`
 - `CRON_SCHEDULE` (optional) - default is `0 */6 * * *`
+- `DEBUG` (optional) - default is `false`. Set to `true` for verbose logging.
 
 ### Plaid
 

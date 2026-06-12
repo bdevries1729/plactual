@@ -1,4 +1,8 @@
+const cron = require('node-cron');
+const api = require('@actual-app/api');
+
 const config = {
+  debug: process.env.DEBUG === 'true' || process.env.DEBUG === 'TRUE' || process.env.DEBUG === 'True',
   cronSchedule: process.env.CRON_SCHEDULE || '0 */6 * * *',
   port: parseInt(process.env.PORT || '3131', 10),
   mappingsFile: process.env.MAPPINGS_FILE || '/data/sync-files/mappings.json',
@@ -8,6 +12,7 @@ const config = {
     secret: process.env.PLAID_SECRET,
   },
   actual: {
+    verbose: false,
     dataDir: process.env.ACTUAL_DATA_DIR || '/data/user-files',
     serverUrl: process.env.ACTUAL_SERVER_URL || 'http://actualbudget:5006',
     password: process.env.ACTUAL_PASSWORD,
@@ -23,7 +28,7 @@ function validateCronSchedule() {
 }
 
 function validatePlaid() {
-  if (config.plaid.environment !== 'sandbox' || config.plaid.environment !== 'production'){
+  if (config.plaid.environment !== 'sandbox' && config.plaid.environment !== 'production'){
     console.error(`Invalid PLAID_ENV: "${config.plaid.environment}". Must be 'sandbox' or 'production'.`);
     process.exit(1);
   }
@@ -37,15 +42,18 @@ function validatePlaid() {
   }
 }
 
-function validateActual() {
+async function validateActual() {
   if (!config.actual.password) {
     console.error("ACTUAL_PASSWORD is not configured.");
     process.exit(1);
   }
-  if (!config.actual.budgetId) {
-    console.error("ACTUAL_BUDGET_ID is not configured.");
+  await api.init({ verbose: config.debug, dataDir: config.actual.dataDir, serverURL: config.actual.serverUrl, password: config.actual.password });
+  const budgets = await api.getBudgets();
+  if (!budgets.some(b => b.groupId === config.actual.budgetId)) {
+    console.error(`No budgets found matching ACTUAL_BUDGET_ID: "${config.actual.budgetId}"`);
     process.exit(1);
   }
+  await api.shutdown();
 }
 
 function validateConfig() {
