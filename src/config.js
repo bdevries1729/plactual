@@ -5,7 +5,7 @@ const config = {
   debug: process.env.DEBUG === 'true' || process.env.DEBUG === 'TRUE' || process.env.DEBUG === 'True',
   cronSchedule: process.env.CRON_SCHEDULE || '0 */6 * * *',
   port: parseInt(process.env.PORT || '3131', 10),
-  mappingsFile: process.env.MAPPINGS_FILE || '/data/sync-files/mappings.json',
+  dbFile: process.env.DB_FILE || '/data/sync-files/db.json',
   plaid: {
     environment: process.env.PLAID_ENV || 'sandbox',
     clientId: process.env.PLAID_CLIENT_ID,

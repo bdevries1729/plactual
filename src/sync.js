@@ -1,7 +1,7 @@
 import api from '@actual-app/api';
 import fs from 'fs';
 import plaid from './plaid.js';
-import mappings from './mappings.js';
+import db from './db.js';
 import { toActualAmount, plaidToActualTransaction } from './helpers.js';
 import { config } from './config.js';
 
@@ -47,29 +47,14 @@ async function fetchPlaidTransactions(accountId, accessToken, initialCursor, ret
 async function syncAccount(mapping) {
   const {
     plaid_account_id: plaidAccountId,
+    actual_account_id: actualAccountId,
     account_name: accountName,
     access_token: accessToken,
     cursor,
   } = mapping;
-  let actualAccountId = mapping.actual_account_id;
 
   const summary = { added: 0, removed: 0, modified: 0 };
   const allData = await fetchPlaidTransactions(plaidAccountId, accessToken, cursor);
-
-  const accounts = await api.getAccounts();
-  if (!accounts.some(a => a.id === actualAccountId)) { // TODO: this is importing transactions and setting balance in a way which causes issues.
-    console.log(`No existing actual account for account_name: ${accountName}. Will create account.`);
-
-    actualAccountId = await api.createAccount(
-      { name: accountName },
-      toActualAmount(allData.currentBalance)
-    );
-    // Update entry with matching plaidAccountId
-    const updatedMappingsList = mappings.load().map(m =>
-      m.plaid_account_id === plaidAccountId ? { ...m, actual_account_id: actualAccountId } : m
-    );
-    mappings.save(updatedMappingsList);
-  }
 
   if (allData.added.length === 0 && allData.removed.length === 0 && allData.modified.length === 0) {
     console.log(`No transactions for account_name: ${accountName}`);
@@ -127,10 +112,9 @@ async function syncAccount(mapping) {
   }
 
   console.log(`Last cursor value for account ${accountName} was ${allData.nextCursor}`);
-  const updatedMappingsList = mappings.load().map(m =>
-    m.plaid_account_id === plaidAccountId ? { ...m, cursor: allData.nextCursor } : m
+  await db.update(({ mappings }) => 
+    mappings.forEach(m => { if (m.plaid_account_id === plaidAccountId) m.cursor = allData.nextCursor })
   );
-  mappings.save(updatedMappingsList);
 
   const totalNum = allData.removed.length + allData.modified.length + allData.added.length;
   console.log(`  ✓ ${summary.added} added, ${summary.modified} modified, ${summary.removed} removed (${totalNum} from Plaid)`);
@@ -152,15 +136,15 @@ async function runSync() {
     return { results: [] };
   }
 
-  const mappingList = mappings.load();
+  const mappingList = db.data.mappings;
   if (!mappingList || mappingList.length === 0) {
-    console.log(`No account mappings found. Add some via the UI or ensure the file exists at ${config.mappingsFile}`);
+    console.log(`No account mappings found. Add some via the UI or ensure the file exists at ${config.dbFile}`);
     return { results: [] };
   }
 
   syncRunning = true;
   const results = [];
-  console.log(`=== Sync started at ${new Date().toISOString()} (${mappingList.length} accounts) ===`);
+  console.log(`\n=== Sync started at ${new Date().toISOString()} (${mappingList.length} accounts) ===`);
 
   try {
     await api.init({ verbose: config.debug, dataDir: config.actual.dataDir, serverURL: config.actual.serverUrl, password: config.actual.password });
@@ -168,7 +152,7 @@ async function runSync() {
 
     for (const mapping of mappingList) {
       try {
-        r = await syncAccount(mapping);
+        const r = await syncAccount(mapping);
         results.push({ mapping, ...r, error: null });
       } catch (err) {
         console.error(`  ✗ Failed "${mapping.account_name}": ${err.message}`);
@@ -177,7 +161,7 @@ async function runSync() {
     }
 
     await api.shutdown();
-    console.log('=== Sync complete ===');
+    console.log('=== Sync complete ===\n');
   } finally {
     syncRunning = false;
   }

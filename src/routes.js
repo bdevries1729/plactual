@@ -3,7 +3,7 @@ import { Products } from 'plaid';
 import api from '@actual-app/api';
 import fs from 'fs';
 import plaid from './plaid.js';
-import mappings from './mappings.js';
+import db from './db.js';
 import { runSync } from './sync.js';
 import { toActualAmount } from './helpers.js';
 import { config } from './config.js';
@@ -11,13 +11,8 @@ import { config } from './config.js';
 const router = express.Router();
 
 router.get('/mappings', (req, res) => {
-  const list = mappings.load().map(({ access_token, ...rest }) => rest); // omit raw tokens for safety
+  const list = db.data.mappings.map(({ access_token, ...rest }) => rest); // omit raw tokens for safety
   res.json(list);
-});
-
-router.delete('/mappings/:id', (req, res) => {
-  mappings.remove(req.params.id);
-  res.json({ ok: true });
 });
 
 router.post('/create_link_token', async (req, res) => {
@@ -62,13 +57,15 @@ router.post('/exchange_public_token', async (req, res) => {
           { name: a.name },
           toActualAmount(a.balances.current)
         );
-        return mappings.add({
+        const mapping = {
           actual_account_id: actualAccountId,
           plaid_account_id: a.account_id,
           account_name: a.name,
           access_token: accessToken,
           cursor: null,
-        });
+        };
+        await db.update(({ mappings}) => mappings.push(mapping));
+        return mapping;
       })
     );
 
@@ -100,9 +97,8 @@ router.post('/sync', async (req, res) => {
 });
 
 router.get('/status', (req, res) => {
-  const mappingList = mappings.load();
   res.json({
-    mappings:  mappingList.length,
+    mappings:  db.data.mappings.length,
     cron:      config.cronSchedule,
     plaid_env: config.plaid.environment,
   });

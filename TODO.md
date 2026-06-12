@@ -9,3 +9,4 @@
 - fix the log bar on the UI
 - UI should list accounts by institution and a total tracker for the institution number
 - UI when the "remove" is used = > actually there should just be an activate/deactivate syncing slider perhaps?
+- deal with when sync triggers and an account doesn't exist.
