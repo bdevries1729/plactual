@@ -1,12 +1,12 @@
-const express = require('express');
-const { Products } = require('plaid');
-const plaid = require('./plaid');
-const api = require('@actual-app/api');
-const mappings = require('./mappings');
-const { runSync } = require('./sync');
-const fs = require('fs');
-const { toActualAmount } = require('./helpers');
-const { config } = require('./config')
+import express from 'express';
+import { Products } from 'plaid';
+import api from '@actual-app/api';
+import fs from 'fs';
+import plaid from './plaid.js';
+import mappings from './mappings.js';
+import { runSync } from './sync.js';
+import { toActualAmount } from './helpers.js';
+import { config } from './config.js';
 
 const router = express.Router();
 
@@ -108,4 +108,4 @@ router.get('/status', (req, res) => {
   });
 });
 
-module.exports = router;
+export default router;

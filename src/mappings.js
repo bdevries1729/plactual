@@ -1,16 +1,12 @@
-const fs   = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const { config } = require('./config')
-
-function removeDuplicatesByPlaidAccountId(mappings) {
-  return mappings.filter((m, i, self) => i === self.findIndex(t => t.plaid_account_id === m.plaid_account_id));
-}
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import { config } from './config.js';
 
 function load() {
   if (!fs.existsSync(config.mappingsFile)) return [];
   try {
-    return removeDuplicatesByPlaidAccountId(JSON.parse(fs.readFileSync(config.mappingsFile, 'utf8')));
+    return JSON.parse(fs.readFileSync(config.mappingsFile, 'utf8'));
   } catch {
     return [];
   }
@@ -18,7 +14,7 @@ function load() {
 
 function save(mappings) {
   fs.mkdirSync(path.dirname(config.mappingsFile), { recursive: true });
-  fs.writeFileSync(config.mappingsFile, JSON.stringify(removeDuplicatesByPlaidAccountId(mappings), null, 2));
+  fs.writeFileSync(config.mappingsFile, JSON.stringify(mappings, null, 2));
 }
 
 function add(mapping) {
@@ -34,4 +30,12 @@ function remove(id) {
   save(mappings);
 }
 
-module.exports = { load, save, add, remove };
+function update(id, mapping) {
+  const mappings = load();
+  const entry = { id: crypto.randomUUID(), ...mapping };
+  mappings.push(entry);
+  save(mappings);
+  return entry;
+}
+
+export default { load, add, remove, save };

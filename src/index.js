@@ -1,15 +1,15 @@
-const express  = require('express');
-const path = require('path');
-const cron = require('node-cron');
-const routes = require('./routes');
-const { runSync } = require('./sync');
-const { config, validateConfig } = require('./config');
+import express  from 'express';
+import path from 'path';
+import cron from 'node-cron';
+import routes from './routes.js';
+import { runSync } from './sync.js';
+import { config, validateConfig } from './config.js';
 
 validateConfig();
 
 const app  = express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../public')));
+app.use(express.static(path.join(import.meta.dirname, '../public')));
 app.use('/api', routes);
 
 app.listen(config.port, () => {

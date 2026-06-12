@@ -1,9 +1,9 @@
-const api = require('@actual-app/api');
-const plaid = require('./plaid');
-const mappings = require('./mappings');
-const { toActualAmount, plaidToActualTransaction } = require('./helpers');
-const fs = require('fs');
-const { config } = require('./config') 
+import api from '@actual-app/api';
+import fs from 'fs';
+import plaid from './plaid.js';
+import mappings from './mappings.js';
+import { toActualAmount, plaidToActualTransaction } from './helpers.js';
+import { config } from './config.js';
 
 // Fetch new transactions for an account. Pass initialCursor=null to fetch all transactions.
 async function fetchPlaidTransactions(accountId, accessToken, initialCursor, retriesLeft = 3) {
@@ -185,4 +185,4 @@ async function runSync() {
   return { results };
 }
 
-module.exports = { runSync };
+export { runSync };

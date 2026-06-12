@@ -1,5 +1,5 @@
-const cron = require('node-cron');
-const api = require('@actual-app/api');
+import cron from  'node-cron';
+import api from '@actual-app/api';
 
 const config = {
   debug: process.env.DEBUG === 'true' || process.env.DEBUG === 'TRUE' || process.env.DEBUG === 'True',
@@ -62,4 +62,4 @@ function validateConfig() {
   validateActual();
 }
 
-module.exports = { config, validateConfig };
+export { config, validateConfig };

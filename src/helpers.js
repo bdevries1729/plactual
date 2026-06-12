@@ -15,4 +15,4 @@ function plaidToActualTransaction(actualAccountId, tx) {
   };
 }
 
-module.exports = { toActualAmount, plaidToActualTransaction };
+export { toActualAmount, plaidToActualTransaction };

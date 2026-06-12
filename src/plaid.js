@@ -1,5 +1,5 @@
-const { PlaidApi, PlaidEnvironments, Configuration } = require('plaid');
-const { config } = require('./config')
+import { PlaidApi, PlaidEnvironments, Configuration } from 'plaid';
+import { config } from './config.js';
 
 const configuration = new Configuration({
   basePath: PlaidEnvironments[config.plaid.environment],
@@ -11,4 +11,4 @@ const configuration = new Configuration({
   },
 });
 
-module.exports = new PlaidApi(configuration);
+export default new PlaidApi(configuration);

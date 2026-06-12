@@ -4,7 +4,7 @@
   "description": "Sync Actual Budget server with banks via Plaid.",
   "license": "ISC",
   "author": "Ben DeVries",
-  "type": "commonjs",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -15,6 +15,7 @@
     "@actual-app/api": "^26.6.0",
     "body-parser": "^2.2.2",
     "express": "^5.2.1",
+    "lowdb": "^7.0.1",
     "node-cron": "^4.2.1",
     "path": "^0.12.7",
     "plaid": "^42.2.0"
