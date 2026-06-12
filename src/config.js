@@ -12,7 +12,6 @@ const config = {
     secret: process.env.PLAID_SECRET,
   },
   actual: {
-    verbose: false,
     dataDir: process.env.ACTUAL_DATA_DIR || '/data/user-files',
     serverUrl: process.env.ACTUAL_SERVER_URL || 'http://actualbudget:5006',
     password: process.env.ACTUAL_PASSWORD,
@@ -57,9 +56,13 @@ async function validateActual() {
 }
 
 function validateConfig() {
+  if (config.debug) console.log("\nServer Configuration:\n", config);
+  
   validateCronSchedule();
   validatePlaid();
   validateActual();
+  
+  if (config.debug)console.log("Configuration validated.\n")
 }
 
 export { config, validateConfig };

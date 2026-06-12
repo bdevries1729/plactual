@@ -1,7 +1,5 @@
 import express from 'express';
 import { Products } from 'plaid';
-import api from '@actual-app/api';
-import fs from 'fs';
 import plaid from './plaid.js';
 import db from './db.js';
 import { runSync } from './sync.js';
@@ -12,6 +10,7 @@ const router = express.Router();
 
 router.get('/mappings', (req, res) => {
   const list = db.data.mappings.map(({ access_token, ...rest }) => rest); // omit raw tokens for safety
+  if (config.debug) console.log("\nGET /mappings. Mappings:\n", list, "\n");
   res.json(list);
 });
 
@@ -27,6 +26,7 @@ router.post('/create_link_token', async (req, res) => {
   };
   try {
     const response = await plaid.linkTokenCreate(linkTokenRequest);
+    if (config.debug) console.log("\nPOST /create_link_token. Link token create response data:\n", response.data, "\n")
     res.json({ link_token: response.data.link_token });
   } catch (err) {
     console.error('link-token error:', err.response?.data || err.message);
@@ -35,44 +35,42 @@ router.post('/create_link_token', async (req, res) => {
 });
 
 router.post('/exchange_public_token', async (req, res) => {
+  if (config.debug) console.log("\nPOST /exchange_public_token. Request body: ", req.body);
   const { public_token: publicToken } = req.body;
   if (!publicToken) return res.status(400).json({ error: 'public_token required' });
 
   try {
     const exchangeRes = await plaid.itemPublicTokenExchange({ public_token: publicToken });
+    if (config.debug) console.log("Token exchange response data:\n", exchangeRes.data);
     const {
       access_token: accessToken,
       item_id: itemId
     } = exchangeRes.data;
 
-    fs.mkdirSync(config.actual.dataDir, { recursive: true });
-    await api.init({ verbose: config.debug, dataDir: config.actual.dataDir, serverURL: config.actual.serverUrl, password: config.actual.password });
-    await api.downloadBudget(config.actual.budgetId);
-
     const accountsRes = await plaid.accountsGet({ access_token: accessToken });
+    if (config.debug) console.log("Accounts associated with token:\n", accountsRes.data, "\n");
 
-    const savedAccountMappings = await Promise.allSettled(
+    const savedMappings = await Promise.allSettled(
       accountsRes.data.accounts.map(async a => {
-        const actualAccountId = await api.createAccount(
-          { name: a.name },
-          toActualAmount(a.balances.current)
-        );
         const mapping = {
-          actual_account_id: actualAccountId,
-          plaid_account_id: a.account_id,
-          account_name: a.name,
+          institution_id: accountsRes.data.item.institution_id,
+          institution_name: accountsRes.data.item.institution_name,
+          item_id: itemId, // TODO: probably needed for updating link, but double check.
           access_token: accessToken,
+          account_name: a.name,
+          // TODO: add the account type, which the docs seem wrong about for actual budget.
+          plaid_account_id: a.account_id,
+          actual_account_id: null,
           cursor: null,
+          sync: true,
         };
         await db.update(({ mappings}) => mappings.push(mapping));
         return mapping;
       })
     );
 
-    await api.shutdown();
-
     // Do not echo access_token back to the client.
-    const accounts = savedAccountMappings
+    const accounts = savedMappings
       .filter(r => r.status === 'fulfilled')
       .map(r => {
         const { access_token: _omit, ...safe } = r.value;
@@ -89,6 +87,7 @@ router.post('/exchange_public_token', async (req, res) => {
 router.post('/sync', async (req, res) => {
   try {
     const result = await runSync();
+    if (config.debug) console.log("\nPOST /sync. Result:\n", result, "\n");
     res.json({ ok: true, results: result?.results ?? [] });
   } catch (err) {
     console.error('manual sync error:', err);
@@ -97,11 +96,13 @@ router.post('/sync', async (req, res) => {
 });
 
 router.get('/status', (req, res) => {
-  res.json({
+  const status = {
     mappings:  db.data.mappings.length,
     cron:      config.cronSchedule,
     plaid_env: config.plaid.environment,
-  });
+  };
+  if (config.debug) console.log("\nGET /status. The status is: \n", status, "\n");
+  res.json(status);
 });
 
 export default router;

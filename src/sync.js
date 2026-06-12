@@ -55,15 +55,17 @@ async function syncAccount(mapping) {
 
   const summary = { added: 0, removed: 0, modified: 0 };
   const allData = await fetchPlaidTransactions(plaidAccountId, accessToken, cursor);
+  if (config.debug) console.log(`\nPlaid transactions fetched for plaid_account_id ${plaidAccountId}\n`, allData);
 
   if (allData.added.length === 0 && allData.removed.length === 0 && allData.modified.length === 0) {
-    console.log(`No transactions for account_name: ${accountName}`);
+    if (config.debug) console.log(`No transactions for account_name: ${accountName}`);
     return summary;
   }
 
   const removed = await Promise.allSettled(
     allData.removed.map(tx => api.deleteTransaction(tx.transaction_id))
   );
+  if (config.debug) console.log("Removed:\n", removed);
   summary.removed = removed.filter(tx => tx.status === 'fulfilled').length;
   if (summary.removed !== allData.removed.length) {
     console.error(
@@ -91,6 +93,8 @@ async function syncAccount(mapping) {
     }
     return api.updateTransaction(id, plaidToActualTransaction(actualAccountId, tx));
   }));
+  if (config.debug) console.log("Modified:\n", modified);
+  if (config.debug) console.log("Modified but tx doesn't yet exist in Actual:\n", txNotThereYet);
   summary.modified = modified.filter(tx => tx.status === 'fulfilled').length;
   const modifiedRejected = modified.filter(tx => tx.status === 'rejected');
   if (modifiedRejected.length > 0) {
@@ -98,12 +102,13 @@ async function syncAccount(mapping) {
     return summary;
   }
 
-  const addedOrRemoved = [...txNotThereYet, ...allData.added].map(tx =>
+  const addedOrModifiedButNotThere = [...txNotThereYet, ...allData.added].map(tx =>
     plaidToActualTransaction(actualAccountId, tx)
   );
-  const importResult = await api.importTransactions(actualAccountId, addedOrRemoved, {
-    reimportDeleted: true,
+  const importResult = await api.importTransactions(actualAccountId, addedOrModifiedButNotThere, {
+    reimportDeleted: false,
   });
+  if (config.debug) console.log("Import result on addedOrNotYetThere:\n", modified);
   summary.added = importResult.added.length;
   summary.modified += importResult.updated.length;
   if (importResult.errors.length > 0) {
@@ -111,13 +116,12 @@ async function syncAccount(mapping) {
     return summary;
   }
 
-  console.log(`Last cursor value for account ${accountName} was ${allData.nextCursor}`);
+  if (config.debug) console.log(`Last cursor value for account ${accountName} was ${allData.nextCursor}`);
   await db.update(({ mappings }) => 
     mappings.forEach(m => { if (m.plaid_account_id === plaidAccountId) m.cursor = allData.nextCursor })
   );
 
-  const totalNum = allData.removed.length + allData.modified.length + allData.added.length;
-  console.log(`  ✓ ${summary.added} added, ${summary.modified} modified, ${summary.removed} removed (${totalNum} from Plaid)`);
+  console.log(`  ✓ ${summary.added} added, ${summary.modified} modified, ${summary.removed} removed (${accountName})`);
   return summary;
 }
 
