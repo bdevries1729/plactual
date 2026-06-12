@@ -5,6 +5,7 @@ import db from './db.js';
 import { runSync } from './sync.js';
 import { toActualAmount } from './helpers.js';
 import { config } from './config.js';
+import { setUpAccountMappingsForAccessToken } from './accounts.js';
 
 const router = express.Router();
 
@@ -47,35 +48,10 @@ router.post('/exchange_public_token', async (req, res) => {
       item_id: itemId
     } = exchangeRes.data;
 
-    const accountsRes = await plaid.accountsGet({ access_token: accessToken });
-    if (config.debug) console.log("Accounts associated with token:\n", accountsRes.data, "\n");
-
-    const savedMappings = await Promise.allSettled(
-      accountsRes.data.accounts.map(async a => {
-        const mapping = {
-          institution_id: accountsRes.data.item.institution_id,
-          institution_name: accountsRes.data.item.institution_name,
-          item_id: itemId, // TODO: probably needed for updating link, but double check.
-          access_token: accessToken,
-          account_name: a.name,
-          // TODO: add the account type, which the docs seem wrong about for actual budget.
-          plaid_account_id: a.account_id,
-          actual_account_id: null,
-          cursor: null,
-          sync: true,
-        };
-        await db.update(({ mappings}) => mappings.push(mapping));
-        return mapping;
-      })
-    );
+    const savedMappings = await setUpAccountMappingsForAccessToken(accessToken);
 
     // Do not echo access_token back to the client.
-    const accounts = savedMappings
-      .filter(r => r.status === 'fulfilled')
-      .map(r => {
-        const { access_token: _omit, ...safe } = r.value;
-        return safe;
-      });
+    const accounts = savedMappings.map(({ access_token, ...safe }) => safe);
 
     res.json({ ok: true, item_id: itemId, accounts });
   } catch (err) {
@@ -96,8 +72,9 @@ router.post('/sync', async (req, res) => {
 });
 
 router.get('/status', (req, res) => {
+  const items = [...new Set(db.data.mappings.map(m => m.item_id))];
   const status = {
-    mappings:  db.data.mappings.length,
+    items:  items.length, // TODO: this should actually come from hitting the endpoint and getting all items for a user.
     cron:      config.cronSchedule,
     plaid_env: config.plaid.environment,
   };

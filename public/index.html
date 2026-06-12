@@ -380,7 +380,7 @@
 
     <div class="stats">
       <div class="stat-card">
-        <div class="stat-label">Accounts</div>
+        <div class="stat-label">Items</div>
         <div class="stat-value" id="stat-count">
           <div class="skeleton" style="width:28px;height:22px;margin-bottom:6px"></div>
         </div>
@@ -460,7 +460,7 @@
         const res = await fetch('/api/status');
         if (!res.ok) throw new Error();
         const data = await res.json();
-        document.getElementById('stat-count').textContent = data.mappings;
+        document.getElementById('stat-count').textContent = data.items;
         document.getElementById('stat-env').innerHTML =
           `<span class="badge ${data.plaid_env}">${data.plaid_env}</span>`;
         document.getElementById('stat-cron').innerHTML =

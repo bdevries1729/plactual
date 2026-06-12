@@ -10,6 +10,8 @@
 - move account mapping creation to another endpoint besides public token exchange? Or maybe just another function?
 - maybe restructure the db so there is items, accounts, and institution schema which are separate.
 
+- create a user for client_user_id (idempotent on new endpoint.)
+
 
 ## Notes:
 
