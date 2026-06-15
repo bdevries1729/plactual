@@ -6,7 +6,7 @@ import { runSync } from './sync.js';
 import { plaidToActualTransaction, toActualAmount } from './helpers.js';
 import { config } from './config.js';
 import { setUpAccountMappingsForAccessToken } from './accounts.js';
-import { generatePlaidUserId } from './user.js';
+import { generatePlaidUserId, getUserItems } from './user.js';
 
 const router = express.Router();
 
@@ -76,15 +76,23 @@ router.post('/sync', async (req, res) => {
   }
 });
 
-router.get('/status', (req, res) => {
+
+// TODO: maybe move the get items to another endpoint since it doesn't really have to do with "status"
+router.get('/status', async (req, res) => {
   if (config.debug) console.log("\nGET /status.");
-  const status = {
-    items:  [...new Set(db.data.mappings.map(m => m.item_id))].length,
-    cron:      config.cronSchedule,
-    plaid_env: config.plaid.environment,
-  };
-  if (config.debug) console.log("The status is: \n", status);
-  res.json(status);
+  try {
+    const items = await getUserItems();
+    const status = {
+      items:  items.length,
+      cron:      config.cronSchedule,
+      plaid_env: config.plaid.environment,
+    };
+    if (config.debug) console.log("The status is: \n", status);
+    res.json(status);
+  } catch (err) {
+    console.error('get status error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 export default router;

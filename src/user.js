@@ -13,4 +13,13 @@ async function generatePlaidUserId() {
   return plaidUserId;
 }
 
-export { generatePlaidUserId };
+async function getUserItems() {
+  if (db.data.users.length === 0) {
+    return [];
+  }
+  const response = await plaid.userItemsGet({ user_id: db.data.users[0].plaid_user_id});
+  if (config.debug) console.log("Get user items response:\n", response.data);
+  return response.data.items;
+}
+
+export { generatePlaidUserId, getUserItems };

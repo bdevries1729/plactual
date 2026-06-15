@@ -8,8 +8,6 @@
 - fix the log bar on the UI
 - UI should list accounts by institution and a total tracker for the institution number
 - move account mapping creation to another endpoint besides public token exchange? Or maybe just another function?
-- maybe restructure the db so there is items, accounts, and institution schema which are separate.
-
 - create a user for client_user_id (idempotent on new endpoint.) then use that to retrieve /users/items/get to get items, and use that for the status on the number of items on the dashboard.
 
 
@@ -17,6 +15,5 @@
 
 - [bypass link](https://plaid.com/docs/api/sandbox/#sandboxpublic_tokencreate) in sandbox
 - [create transaction link](https://plaid.com/docs/api/sandbox/#sandboxtransactionscreate) for sandbox.
-
-- the token exchange only gives the itemid, but not the institutionid.
+- the token exchange only gives the itemid, but not the institutionid?
 
