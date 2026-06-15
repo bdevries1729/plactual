@@ -62,7 +62,7 @@ function validateConfig() {
   validatePlaid();
   validateActual();
   
-  if (config.debug)console.log("Configuration validated.\n")
+  if (config.debug)console.log("Configuration validated.\n");
 }
 
 export { config, validateConfig };

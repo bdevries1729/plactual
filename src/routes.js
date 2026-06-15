@@ -15,9 +15,41 @@ router.get('/mappings', (req, res) => {
   res.json(list);
 });
 
+// This must be called before creating the link token. All the items generated are associated with one user. 
+// This operation is idempotent.
+router.post('/plaid_user', async (req, res) => {
+  const clientUser = db.data.users[0]?.client_user_id || crypto.randomUUID();
+  if (config.debug) console.log("\nPOST /plaid_user. Will use client_user_id: ", clientUser);
+  if (db.data.users.length === 0) {
+    db.update(({ users }) => users.push({client_user_id: clientUser }));
+  }
+
+  try {
+    const response = await plaid.userCreate({ client_user_id: clientUser });
+    if (config.debug) console.log("Create user response data:\n", response.data, "\n");
+    const plaidUserId = response.data.user_id;
+    db.update(({ users }) => users[0].plaid_user_id = plaidUserId);
+    res.json({ client_user_id: clientUser, plaid_user_id: plaidUserId });
+  } catch (err) {
+    console.error('create user error:', err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data?.error_message || err.message });
+  }
+});
+
+router.get('/plaid_user', async (req, res) => {
+  const user = db.data.users[0];
+  if (!user) {
+    const err = 'no plaid user found.';
+    if (config.debug) console.log(err);
+    res.status(404).json({ error: err });
+    return;
+  }
+  res.json(user);
+});
+
 router.post('/create_link_token', async (req, res) => {
   const linkTokenRequest = {
-    user: {
+    user: { // swap this out for the user_id from the create user so we can poll how many items that user has
       client_user_id: 'plaid-sync-user',
     },
     client_name: 'Plaid Sync',
@@ -27,7 +59,7 @@ router.post('/create_link_token', async (req, res) => {
   };
   try {
     const response = await plaid.linkTokenCreate(linkTokenRequest);
-    if (config.debug) console.log("\nPOST /create_link_token. Link token create response data:\n", response.data, "\n")
+    if (config.debug) console.log("\nPOST /create_link_token. Link token create response data:\n", response.data, "\n");
     res.json({ link_token: response.data.link_token });
   } catch (err) {
     console.error('link-token error:', err.response?.data || err.message);
@@ -72,9 +104,8 @@ router.post('/sync', async (req, res) => {
 });
 
 router.get('/status', (req, res) => {
-  const items = [...new Set(db.data.mappings.map(m => m.item_id))];
   const status = {
-    items:  items.length, // TODO: this should actually come from hitting the endpoint and getting all items for a user.
+    items:  [...new Set(db.data.mappings.map(m => m.item_id))].length,
     cron:      config.cronSchedule,
     plaid_env: config.plaid.environment,
   };
