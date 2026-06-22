@@ -1,5 +1,5 @@
 {
-  "name": "plaid_sync",
+  "name": "plactual",
   "version": "1.0.0",
   "description": "Sync Actual Budget server with banks via Plaid.",
   "license": "ISC",
