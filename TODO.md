@@ -8,6 +8,9 @@
 - UI should list accounts by institution and a total tracker for the institution number
 - move account mapping creation to another endpoint besides public token exchange? Or maybe just another function?
 - create a user for client_user_id (idempotent on new endpoint.) then use that to retrieve /users/items/get to get items, and use that for the status on the number of items on the dashboard.
+- update the README.md
+- add a license
+- add a github workflow which publishes a copy of the container or perhaps the node package.
 
 
 ## Notes:
