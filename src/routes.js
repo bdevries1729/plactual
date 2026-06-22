@@ -24,7 +24,7 @@ router.post('/create_link_token', async (req, res) => {
     if (config.debug) console.log(`Plaid user_id: ${plaidUserId}`)
     const linkTokenRequest = {
       user_id: plaidUserId,
-      client_name: 'Plaid Sync',
+      client_name: 'Plactual',
       products: [Products.Auth, Products.Transactions],
       country_codes: ['US'],
       language: 'en',

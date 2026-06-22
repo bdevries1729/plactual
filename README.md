@@ -1,4 +1,4 @@
-# Plaid Sync
+# Plactual
 
 ## Environment Variables
 
