@@ -475,6 +475,7 @@
         line-height: 1.8;
         overflow-y: auto;
         max-height: 220px;
+        white-space: pre-wrap;
       }
 
       .log-ok {
@@ -863,7 +864,7 @@
           if (!res.ok) throw new Error('Refresh failed');
           await loadAccounts();
           await loadStatus();
-          showToast('Mappings refreshed', 'success');
+          showToast('Accounts refreshed', 'success');
         } catch (e) {
           showToast(e.message, 'error');
         } finally {
