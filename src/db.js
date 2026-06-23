@@ -1,7 +1,7 @@
 import { JSONFilePreset } from 'lowdb/node';
 import { config } from './config.js';
 
-const dbStructure = { mappings: [], users: [] }
+const dbStructure = { mappings: [], users: [] };
 
 // mappings
 // {
@@ -25,4 +25,4 @@ const dbStructure = { mappings: [], users: [] }
 
 const db = await JSONFilePreset(config.dbFile, dbStructure);
 
-export default db
+export default db;

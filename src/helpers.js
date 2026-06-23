@@ -1,5 +1,5 @@
 function toActualAmount(plaidAmount) {
-    return plaidAmount ? Math.round(plaidAmount*100) : null
+  return plaidAmount ? Math.round(plaidAmount * 100) : null;
 }
 
 function plaidToActualTransaction(actualAccountId, tx) {
