@@ -71,68 +71,71 @@ async function syncAccount(mapping, isNewAccount = false, preFetchedPlaidAccount
   if (config.debug)
     console.log(`\nPlaid transactions fetched for plaid_account_id ${plaidAccountId}\n`, allData);
 
-  if (allData.added.length === 0 && allData.removed.length === 0 && allData.modified.length === 0) {
+  const hasTransactions =
+    allData.added.length > 0 || allData.removed.length > 0 || allData.modified.length > 0;
+
+  if (!hasTransactions) {
     if (config.debug) console.log(`No transactions for account_name: ${accountName}`);
-    return summary;
-  }
-
-  const removed = await Promise.allSettled(
-    allData.removed.map((tx) => api.deleteTransaction(tx.transaction_id))
-  );
-  if (config.debug) console.log('Removed:\n', removed);
-  summary.removed = removed.filter((tx) => tx.status === 'fulfilled').length;
-  if (summary.removed !== allData.removed.length) {
-    console.error(
-      'Unable to remove all transactions.',
-      removed.filter((tx) => tx.status === 'rejected').map((tx) => tx.reason)
+    if (!isNewAccount) return summary;
+  } else {
+    const removed = await Promise.allSettled(
+      allData.removed.map((tx) => api.deleteTransaction(tx.transaction_id))
     );
-    return summary;
-  }
-
-  const txNotThereYet = [];
-  const modified = await Promise.allSettled(
-    allData.modified.map(async (tx) => {
-      const dateBefore = new Date(tx.date);
-      dateBefore.setDate(dateBefore.getDate() - 7);
-      const dateAfter = new Date(tx.date);
-      dateAfter.setDate(dateAfter.getDate() + 7);
-      const txList = await api.getTransactions(
-        actualAccountId,
-        dateBefore.toISOString().split('T')[0],
-        dateAfter.toISOString().split('T')[0]
+    if (config.debug) console.log('Removed:\n', removed);
+    summary.removed = removed.filter((tx) => tx.status === 'fulfilled').length;
+    if (summary.removed !== allData.removed.length) {
+      console.error(
+        'Unable to remove all transactions.',
+        removed.filter((tx) => tx.status === 'rejected').map((tx) => tx.reason)
       );
-      const id = txList.find((t) => t.imported_id === tx.transaction_id)?.id;
-      if (!id) {
-        txNotThereYet.push(tx);
-        return;
-      }
-      return api.updateTransaction(id, plaidToActualTransaction(actualAccountId, tx));
-    })
-  );
-  if (config.debug) console.log('Modified:\n', modified);
-  if (config.debug) console.log("Modified but tx doesn't yet exist in Actual:\n", txNotThereYet);
-  summary.modified = modified.filter((tx) => tx.status === 'fulfilled').length;
-  const modifiedRejected = modified.filter((tx) => tx.status === 'rejected');
-  if (modifiedRejected.length > 0) {
-    console.error(
-      'Unable to modify all transactions.',
-      modifiedRejected.map((tx) => tx.reason)
-    );
-    return summary;
-  }
+      return summary;
+    }
 
-  const addedOrModifiedButNotThere = [...txNotThereYet, ...allData.added].map((tx) =>
-    plaidToActualTransaction(actualAccountId, tx)
-  );
-  const importResult = await api.importTransactions(actualAccountId, addedOrModifiedButNotThere, {
-    reimportDeleted: false,
-  });
-  if (config.debug) console.log('Import result on addedOrNotYetThere:\n', modified);
-  summary.added = importResult.added.length;
-  summary.modified += importResult.updated.length;
-  if (importResult.errors.length > 0) {
-    console.error('Error importing transactions.', importResult.errors);
-    return summary;
+    const txNotThereYet = [];
+    const modified = await Promise.allSettled(
+      allData.modified.map(async (tx) => {
+        const dateBefore = new Date(tx.date);
+        dateBefore.setDate(dateBefore.getDate() - 7);
+        const dateAfter = new Date(tx.date);
+        dateAfter.setDate(dateAfter.getDate() + 7);
+        const txList = await api.getTransactions(
+          actualAccountId,
+          dateBefore.toISOString().split('T')[0],
+          dateAfter.toISOString().split('T')[0]
+        );
+        const id = txList.find((t) => t.imported_id === tx.transaction_id)?.id;
+        if (!id) {
+          txNotThereYet.push(tx);
+          return;
+        }
+        return api.updateTransaction(id, plaidToActualTransaction(actualAccountId, tx));
+      })
+    );
+    if (config.debug) console.log('Modified:\n', modified);
+    if (config.debug) console.log("Modified but tx doesn't yet exist in Actual:\n", txNotThereYet);
+    summary.modified = modified.filter((tx) => tx.status === 'fulfilled').length;
+    const modifiedRejected = modified.filter((tx) => tx.status === 'rejected');
+    if (modifiedRejected.length > 0) {
+      console.error(
+        'Unable to modify all transactions.',
+        modifiedRejected.map((tx) => tx.reason)
+      );
+      return summary;
+    }
+
+    const addedOrModifiedButNotThere = [...txNotThereYet, ...allData.added].map((tx) =>
+      plaidToActualTransaction(actualAccountId, tx)
+    );
+    const importResult = await api.importTransactions(actualAccountId, addedOrModifiedButNotThere, {
+      reimportDeleted: false,
+    });
+    if (config.debug) console.log('Import result on addedOrNotYetThere:\n', modified);
+    summary.added = importResult.added.length;
+    summary.modified += importResult.updated.length;
+    if (importResult.errors.length > 0) {
+      console.error('Error importing transactions.', importResult.errors);
+      return summary;
+    }
   }
 
   if (config.debug)
@@ -253,9 +256,13 @@ async function runSync() {
         );
 
         mapping.actual_account_id = newAccountId;
+        mapping.cursor = null;
         await db.update(({ mappings }) => {
           const m = mappings.find((x) => x.plaid_account_id === mapping.plaid_account_id);
-          if (m) m.actual_account_id = newAccountId;
+          if (m) {
+            m.actual_account_id = newAccountId;
+            m.cursor = null;
+          }
         });
         isNewAccount = true;
       }

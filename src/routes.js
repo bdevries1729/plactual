@@ -91,11 +91,10 @@ router.post('/sync', async (req, res) => {
   res.json({ ok: true, results: result?.results ?? [] });
 });
 
-
 router.get('/status', async (req, res) => {
   const mappedItemsCount = new Set(db.data.mappings.map((m) => m.item_id)).size;
   const health = await checkExternalHealth();
-  
+
   const status = {
     items: mappedItemsCount,
     cron: config.cronSchedule,
@@ -103,7 +102,7 @@ router.get('/status', async (req, res) => {
     services: {
       plaid: health.plaid,
       actual: health.actual,
-    }
+    },
   };
   if (config.debug) console.log('The status is: \n', status);
   res.json(status);
