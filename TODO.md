@@ -1,10 +1,8 @@
 # TODO
 
-- account type conversion needs to be updated.
-- add update item flow for when the plaid token expires, and some check which triggers this programmatically. Maybe in the UI I can ping plaid to see if needs update, then add a message that item needs an update and a button by the item to trigger the update UI. I can test this with `https://plaid.com/docs/api/sandbox/#sandboxitemreset_login`.
+- add update item flow for when the plaid token expires, and some check which triggers this programmatically. Ping plaid to see if needs update, then add a message that item needs an update and a button by the item to trigger the update UI. I can test this with `https://plaid.com/docs/api/sandbox/#sandboxitemreset_login`.
 - update the README.md
 - add a github workflow which publishes a copy of the container or perhaps the node package.
-- if the actual account does not yet exist, that is a new account. The logic for starting balance, etc... needs to be updated.
 
 ## Notes:
 
