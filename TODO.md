@@ -4,7 +4,7 @@
 - Since accounts only created during sync, we can solve initial budget balance issue. 1. Create new account without initial balance, 2. import transactions (only back to the first date of the month for categorization) 3. get current balance 4. add a new transaction to that account which is the initial balance such that the current balance matches what it should.
 - add update item flow for when the plaid token expires, and some check which triggers this programmatically. Maybe in the UI I can ping plaid to see if needs update, then add a message that item needs an update and a button by the item to trigger the update UI. I can test this with `https://plaid.com/docs/api/sandbox/#sandboxitemreset_login`.
 - fix the log bar down below in the UI
-- UI should list accounts by institution (item) and a total tracker for the institution number
+- [x] UI should list accounts by institution (item) and a total tracker for the institution number
 - update the README.md
 - add a github workflow which publishes a copy of the container or perhaps the node package.
 

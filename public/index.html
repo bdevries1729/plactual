@@ -91,6 +91,7 @@
           background 0.4s,
           box-shadow 0.4s;
       }
+
       .status-dot.ok {
         background: var(--success);
         box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
@@ -147,11 +148,13 @@
         text-transform: uppercase;
         letter-spacing: 0.5px;
       }
+
       .badge.sandbox {
         background: rgba(245, 158, 11, 0.15);
         color: var(--warning);
         border: 1px solid rgba(245, 158, 11, 0.25);
       }
+
       .badge.production {
         background: var(--success-dim);
         color: var(--success);
@@ -175,11 +178,32 @@
 
       /* ── Accounts list ── */
       .accounts {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+
+      .institution-group {
+        display: flex;
+        flex-direction: column;
         background: var(--surface);
         border: 1px solid var(--border);
         border-radius: var(--radius);
-        margin-bottom: 16px;
         overflow: hidden;
+      }
+
+      .institution-header {
+        padding: 10px 15px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--muted);
+        background: var(--surface-2);
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid var(--border);
       }
 
       .account-row {
@@ -190,9 +214,11 @@
         border-bottom: 1px solid var(--border);
         transition: background 0.12s;
       }
+
       .account-row:last-child {
         border-bottom: none;
       }
+
       .account-row:hover {
         background: var(--surface-2);
       }
@@ -246,11 +272,13 @@
         flex-shrink: 0;
         font-family: inherit;
       }
+
       .delete-btn:hover {
         border-color: var(--danger);
         color: var(--danger);
         background: var(--danger-dim);
       }
+
       .delete-btn:disabled {
         opacity: 0.4;
         cursor: not-allowed;
@@ -262,7 +290,11 @@
         text-align: center;
         color: var(--muted);
         font-size: 14px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
       }
+
       .empty-state .empty-hint {
         font-size: 12px;
         margin-top: 5px;
@@ -282,10 +314,12 @@
         animation: shimmer 1.4s infinite;
         border-radius: 4px;
       }
+
       @keyframes shimmer {
         0% {
           background-position: 200% 0;
         }
+
         100% {
           background-position: -200% 0;
         }
@@ -313,6 +347,7 @@
         gap: 7px;
         letter-spacing: -0.1px;
       }
+
       .btn:disabled {
         opacity: 0.45;
         cursor: not-allowed;
@@ -323,6 +358,7 @@
         background: var(--accent);
         color: #fff;
       }
+
       .btn-primary:hover:not(:disabled) {
         background: #2563eb;
       }
@@ -332,6 +368,7 @@
         color: var(--text);
         border: 1px solid var(--border);
       }
+
       .btn-secondary:hover:not(:disabled) {
         border-color: rgba(59, 130, 246, 0.4);
         color: var(--accent);
@@ -347,6 +384,7 @@
         animation: spin 0.55s linear infinite;
         flex-shrink: 0;
       }
+
       @keyframes spin {
         to {
           transform: rotate(360deg);
@@ -365,10 +403,12 @@
           margin-top 0.3s ease;
         margin-top: 0;
       }
+
       .sync-log.open {
         max-height: 220px;
         margin-top: 12px;
       }
+
       .sync-log-inner {
         padding: 14px 16px;
         font-family: var(--mono);
@@ -378,12 +418,15 @@
         overflow-y: auto;
         max-height: 220px;
       }
+
       .log-ok {
         color: var(--success);
       }
+
       .log-err {
         color: var(--danger);
       }
+
       .log-dim {
         color: var(--muted);
       }
@@ -414,26 +457,32 @@
         max-width: 300px;
         pointer-events: all;
       }
+
       .toast.success {
         border-color: rgba(16, 185, 129, 0.3);
       }
+
       .toast.error {
         border-color: rgba(244, 63, 94, 0.3);
       }
+
       .toast-icon {
         font-size: 14px;
         flex-shrink: 0;
       }
+
       @keyframes toastIn {
         from {
           opacity: 0;
           transform: translateY(10px);
         }
+
         to {
           opacity: 1;
           transform: translateY(0);
         }
       }
+
       @keyframes toastOut {
         to {
           opacity: 0;
@@ -442,6 +491,7 @@
       }
     </style>
   </head>
+
   <body>
     <div class="container">
       <header>
@@ -476,32 +526,37 @@
       </div>
 
       <div class="accounts" id="accounts-list">
-        <div
-          style="
-            padding: 13px 15px;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            gap: 12px;
-            align-items: center;
-          "
-        >
-          <div
-            class="skeleton"
-            style="width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0"
-          ></div>
-          <div style="flex: 1">
-            <div class="skeleton" style="width: 55%; height: 13px; margin-bottom: 6px"></div>
-            <div class="skeleton" style="width: 38%; height: 10px"></div>
+        <div class="institution-group">
+          <div class="institution-header">
+            <div class="skeleton" style="width: 80px; height: 13px"></div>
           </div>
-        </div>
-        <div style="padding: 13px 15px; display: flex; gap: 12px; align-items: center">
           <div
-            class="skeleton"
-            style="width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0"
-          ></div>
-          <div style="flex: 1">
-            <div class="skeleton" style="width: 48%; height: 13px; margin-bottom: 6px"></div>
-            <div class="skeleton" style="width: 34%; height: 10px"></div>
+            style="
+              padding: 13px 15px;
+              border-bottom: 1px solid var(--border);
+              display: flex;
+              gap: 12px;
+              align-items: center;
+            "
+          >
+            <div
+              class="skeleton"
+              style="width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0"
+            ></div>
+            <div style="flex: 1">
+              <div class="skeleton" style="width: 55%; height: 13px; margin-bottom: 6px"></div>
+              <div class="skeleton" style="width: 38%; height: 10px"></div>
+            </div>
+          </div>
+          <div style="padding: 13px 15px; display: flex; gap: 12px; align-items: center">
+            <div
+              class="skeleton"
+              style="width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0"
+            ></div>
+            <div style="flex: 1">
+              <div class="skeleton" style="width: 48%; height: 13px; margin-bottom: 6px"></div>
+              <div class="skeleton" style="width: 34%; height: 10px"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -573,18 +628,34 @@
             return;
           }
 
-          container.innerHTML = list
+          const grouped = list.reduce((acc, m) => {
+            if (!acc[m.item_id]) acc[m.item_id] = { name: m.institution_name, items: [] };
+            acc[m.item_id].items.push(m);
+            return acc;
+          }, {});
+
+          container.innerHTML = Object.entries(grouped)
             .map(
-              (m) => `
-          <div class="account-row" id="row-${m.id}">
-            <div class="account-icon">🏦</div>
-            <div class="account-info">
-              <div class="account-name">${escHtml(m.account_name)}</div>
-              <div class="account-id">${escHtml(m.plaid_account_id)}</div>
+              ([itemId, group]) => `
+          <div class="institution-group" id="group-${itemId}">
+            <div class="institution-header">
+              ${escHtml(group.name)} <span class="badge" id="badge-${itemId}" style="margin-left: 8px; background: var(--surface); color: var(--muted); border-color: var(--border);">${group.items.length} account${group.items.length !== 1 ? 's' : ''}</span>
             </div>
-            <button class="delete-btn" onclick="removeAccount('${m.id}', this)" title="Remove account">
-              Remove
-            </button>
+            ${group.items
+              .map(
+                (m) => `
+            <div class="account-row" id="row-${m.id}">
+              <div class="account-icon">🏦</div>
+              <div class="account-info">
+                <div class="account-name">${escHtml(m.account_name)}</div>
+                <div class="account-id">${escHtml(m.plaid_account_id)}</div>
+              </div>
+              <button class="delete-btn" onclick="removeAccount('${m.id}', '${itemId}', this)" title="Remove account">
+                Remove
+              </button>
+            </div>`
+              )
+              .join('')}
           </div>`
             )
             .join('');
@@ -594,15 +665,17 @@
       }
 
       // ── Remove account ───────────────────────────────────────────────────
-      async function removeAccount(id, btn) {
+      async function removeAccount(id, itemId, btn) {
         btn.disabled = true;
         btn.textContent = '…';
         try {
           const res = await fetch(`/api/mappings/${id}`, { method: 'DELETE' });
           if (!res.ok) throw new Error();
           const row = document.getElementById(`row-${id}`);
-          row.style.transition = 'opacity 0.2s';
-          row.style.opacity = '0';
+          if (row) {
+            row.style.transition = 'opacity 0.2s';
+            row.style.opacity = '0';
+          }
           setTimeout(() => {
             loadAccounts();
             loadStatus();
@@ -610,8 +683,10 @@
           showToast('Account removed', 'success');
         } catch {
           showToast('Failed to remove account', 'error');
-          btn.disabled = false;
-          btn.textContent = 'Remove';
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Remove';
+          }
         }
       }
 
