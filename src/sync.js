@@ -173,6 +173,10 @@ async function runSync() {
     await api.downloadBudget(config.actual.budgetId);
 
     for (const mapping of mappingList) {
+      if (!mapping.sync) {
+        if (config.debug) console.log(`Skipping sync for ${mapping.account_name} (sync disabled)`);
+        continue;
+      }
       try {
         const r = await syncAccount(mapping);
         results.push({ mapping, ...r, error: null });

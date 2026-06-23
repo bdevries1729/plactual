@@ -15,6 +15,25 @@ router.get('/mappings', async (req, res) => {
   res.json(list);
 });
 
+router.patch('/mappings/:plaid_account_id/sync', async (req, res) => {
+  const { plaid_account_id } = req.params;
+  const { sync } = req.body;
+
+  let updated = false;
+  await db.update(({ mappings }) => {
+    const mapping = mappings.find((m) => m.plaid_account_id === plaid_account_id);
+    if (mapping) {
+      mapping.sync = !!sync;
+      updated = true;
+    }
+  });
+
+  if (!updated) {
+    return res.status(404).json({ ok: false, error: 'Mapping not found' });
+  }
+  res.json({ ok: true });
+});
+
 router.post('/mappings/refresh', async (req, res) => {
   const { success, errors } = await ensureAllAccountMappings();
   if (!success) {

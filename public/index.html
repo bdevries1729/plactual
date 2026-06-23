@@ -259,30 +259,58 @@
         text-overflow: ellipsis;
       }
 
-      .delete-btn {
-        background: none;
-        border: 1px solid transparent;
-        border-radius: 6px;
-        padding: 5px 9px;
-        color: var(--muted);
-        cursor: pointer;
-        font-size: 11px;
-        line-height: 1;
-        transition: all 0.14s;
+      .toggle {
+        position: relative;
+        display: inline-block;
+        width: 32px;
+        height: 18px;
         flex-shrink: 0;
-        font-family: inherit;
       }
 
-      .delete-btn:hover {
-        border-color: var(--danger);
-        color: var(--danger);
-        background: var(--danger-dim);
+      .toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
       }
 
-      .delete-btn:disabled {
-        opacity: 0.4;
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: var(--surface-2);
+        border: 1px solid var(--border);
+        transition: 0.2s;
+        border-radius: 18px;
+      }
+
+      .slider:before {
+        position: absolute;
+        content: '';
+        height: 12px;
+        width: 12px;
+        left: 2px;
+        bottom: 2px;
+        background-color: var(--muted);
+        transition: 0.2s;
+        border-radius: 50%;
+      }
+
+      input:checked + .slider {
+        background-color: var(--accent-dim);
+        border-color: rgba(59, 130, 246, 0.4);
+      }
+
+      input:checked + .slider:before {
+        transform: translateX(14px);
+        background-color: var(--accent);
+      }
+
+      input:disabled + .slider {
+        opacity: 0.5;
         cursor: not-allowed;
-        pointer-events: none;
       }
 
       .empty-state {
@@ -393,18 +421,22 @@
 
       /* ── Sync log ── */
       .sync-log {
-        background: var(--surface);
-        border: 1px solid var(--border);
+        background: transparent;
+        border: 1px solid transparent;
         border-radius: var(--radius);
         overflow: hidden;
         max-height: 0;
         transition:
           max-height 0.3s ease,
-          margin-top 0.3s ease;
+          margin-top 0.3s ease,
+          border-color 0.3s ease,
+          background-color 0.3s ease;
         margin-top: 0;
       }
 
       .sync-log.open {
+        background: var(--surface);
+        border-color: var(--border);
         max-height: 220px;
         margin-top: 12px;
       }
@@ -502,7 +534,7 @@
 
       <div class="stats">
         <div class="stat-card">
-          <div class="stat-label">Items</div>
+          <div class="stat-label">Institutions</div>
           <div class="stat-value" id="stat-count">
             <div class="skeleton" style="width: 28px; height: 22px; margin-bottom: 6px"></div>
           </div>
@@ -523,6 +555,19 @@
 
       <div class="section-header">
         <span class="section-title">Linked Accounts</span>
+        <span
+          id="sync-header-label"
+          style="
+            display: none;
+            margin-left: auto;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.9px;
+            color: var(--muted);
+          "
+          >Sync to Actual</span
+        >
       </div>
 
       <div class="accounts" id="accounts-list">
@@ -619,7 +664,10 @@
           const list = await res.json();
           const container = document.getElementById('accounts-list');
 
+          const syncHeaderLabel = document.getElementById('sync-header-label');
+
           if (!list.length) {
+            if (syncHeaderLabel) syncHeaderLabel.style.display = 'none';
             container.innerHTML = `
             <div class="empty-state">
               No accounts linked yet.
@@ -627,6 +675,8 @@
             </div>`;
             return;
           }
+
+          if (syncHeaderLabel) syncHeaderLabel.style.display = 'block';
 
           const grouped = list.reduce((acc, m) => {
             if (!acc[m.item_id]) acc[m.item_id] = { name: m.institution_name, items: [] };
@@ -644,15 +694,16 @@
             ${group.items
               .map(
                 (m) => `
-            <div class="account-row" id="row-${m.id}">
+            <div class="account-row" id="row-${m.plaid_account_id}">
               <div class="account-icon">🏦</div>
               <div class="account-info">
                 <div class="account-name">${escHtml(m.account_name)}</div>
                 <div class="account-id">${escHtml(m.plaid_account_id)}</div>
               </div>
-              <button class="delete-btn" onclick="removeAccount('${m.id}', '${itemId}', this)" title="Remove account">
-                Remove
-              </button>
+              <label class="toggle" title="Toggle sync to Actual">
+                <input type="checkbox" ${m.sync ? 'checked' : ''} onchange="toggleSync('${m.plaid_account_id}', this)">
+                <span class="slider"></span>
+              </label>
             </div>`
               )
               .join('')}
@@ -664,29 +715,23 @@
         }
       }
 
-      // ── Remove account ───────────────────────────────────────────────────
-      async function removeAccount(id, itemId, btn) {
-        btn.disabled = true;
-        btn.textContent = '…';
+      // ── Toggle Sync ───────────────────────────────────────────────────
+      async function toggleSync(plaidAccountId, inputEl) {
+        const newValue = inputEl.checked;
+        inputEl.disabled = true;
         try {
-          const res = await fetch(`/api/mappings/${id}`, { method: 'DELETE' });
+          const res = await fetch(`/api/mappings/${plaidAccountId}/sync`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sync: newValue }),
+          });
           if (!res.ok) throw new Error();
-          const row = document.getElementById(`row-${id}`);
-          if (row) {
-            row.style.transition = 'opacity 0.2s';
-            row.style.opacity = '0';
-          }
-          setTimeout(() => {
-            loadAccounts();
-            loadStatus();
-          }, 200);
-          showToast('Account removed', 'success');
+          showToast(`Sync ${newValue ? 'enabled' : 'disabled'}`, 'success');
         } catch {
-          showToast('Failed to remove account', 'error');
-          if (btn) {
-            btn.disabled = false;
-            btn.textContent = 'Remove';
-          }
+          showToast('Failed to update sync setting', 'error');
+          inputEl.checked = !newValue;
+        } finally {
+          inputEl.disabled = false;
         }
       }
 
