@@ -6,6 +6,7 @@
 - update the README.md
 - add a github workflow which publishes a copy of the container or perhaps the node package.
 - status icon in UI doesn't behave as expected.
+- if the actual account does not yet exist, that is a new account. The logic for starting balance, etc... needs to be updated.
 
 ## Notes:
 

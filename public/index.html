@@ -97,6 +97,11 @@
         box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
       }
 
+      .status-dot.warning {
+        background: var(--warning);
+        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+      }
+
       /* ── Stat cards ── */
       .stats {
         display: grid;
@@ -668,13 +673,15 @@
     <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
     <script>
       let plaidHandler = null;
+      let previousServerState = null;
+      let previousServicesState = { plaid: null, actual: null };
 
       // ── Toasts ──────────────────────────────────────────────────────────
       function showToast(message, type = 'info') {
         const icons = { success: '✓', error: '✕', info: '·' };
         const el = document.createElement('div');
         el.className = `toast ${type}`;
-        el.innerHTML = `<span class="toast-icon">${icons[type]}</span><span>${message}</span>`;
+        el.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
         document.getElementById('toast-container').appendChild(el);
         setTimeout(() => {
           el.style.animation = 'toastOut 0.2s ease forwards';
@@ -688,15 +695,48 @@
           const res = await fetch('/api/status');
           if (!res.ok) throw new Error();
           const data = await res.json();
+
           document.getElementById('stat-count').textContent = data.items;
           document.getElementById('stat-env').innerHTML =
             `<span class="badge ${data.plaid_env}">${data.plaid_env}</span>`;
           document.getElementById('stat-cron').innerHTML =
             `<span style="font-family:var(--mono);font-size:12px;color:var(--text)">${data.cron}</span>`;
-          document.getElementById('status-dot').className = 'status-dot ok';
+
+          const sPlaid = data.services?.plaid;
+          const sActual = data.services?.actual;
+
+          if (previousServicesState.plaid !== null && previousServicesState.plaid !== sPlaid) {
+            showToast(`Plaid API is now ${sPlaid}`, sPlaid === 'up' ? 'success' : 'error');
+          }
+          if (previousServicesState.actual !== null && previousServicesState.actual !== sActual) {
+            showToast(
+              `Actual Budget server is now ${sActual}`,
+              sActual === 'up' ? 'success' : 'error'
+            );
+          }
+          previousServicesState = { plaid: sPlaid, actual: sActual };
+
+          const dot = document.getElementById('status-dot');
+          if (sPlaid === 'down' || sActual === 'down') {
+            dot.className = 'status-dot warning';
+            dot.title = `Plaid: ${sPlaid}, Actual: ${sActual}`;
+          } else {
+            dot.className = 'status-dot ok';
+            dot.title = 'All systems operational';
+          }
+
+          if (previousServerState === 'down') {
+            showToast('Server connection restored', 'success');
+          }
+          previousServerState = 'up';
         } catch {
-          document.getElementById('status-dot').className = 'status-dot';
-          showToast('Cannot reach the server', 'error');
+          const dot = document.getElementById('status-dot');
+          dot.className = 'status-dot';
+          dot.title = 'Server offline';
+          if (previousServerState !== 'down') {
+            showToast('Cannot reach the server', 'error');
+            previousServerState = 'down';
+          }
         }
       }
 
@@ -913,6 +953,7 @@
       // ── Boot ─────────────────────────────────────────────────────────────
       (async () => {
         await Promise.all([loadStatus(), loadAccounts()]);
+        setInterval(loadStatus, 5000);
         document.getElementById('refresh-btn').disabled = false;
         document.getElementById('sync-btn').disabled = false;
         await initPlaid();

@@ -6,6 +6,7 @@ import { runSync } from './sync.js';
 import { config } from './config.js';
 import { createAccountMappings, ensureAllAccountMappings } from './accounts.js';
 import { generatePlaidUserId } from './user.js';
+import { checkExternalHealth } from './health.js';
 
 const router = express.Router();
 
@@ -90,12 +91,19 @@ router.post('/sync', async (req, res) => {
   res.json({ ok: true, results: result?.results ?? [] });
 });
 
+
 router.get('/status', async (req, res) => {
   const mappedItemsCount = new Set(db.data.mappings.map((m) => m.item_id)).size;
+  const health = await checkExternalHealth();
+  
   const status = {
     items: mappedItemsCount,
     cron: config.cronSchedule,
     plaid_env: config.plaid.environment,
+    services: {
+      plaid: health.plaid,
+      actual: health.actual,
+    }
   };
   if (config.debug) console.log('The status is: \n', status);
   res.json(status);
