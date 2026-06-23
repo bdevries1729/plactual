@@ -14,7 +14,8 @@ async function createAccountMappings(accessToken, accountIds = undefined) {
     item_id: item.item_id,
     access_token: accessToken,
     account_name: a.name,
-    type: a.type, // TODO: this may need Plaid -> Actual translation. Also the docs are kinda shakey here.
+    type: a.type,
+    subtype: a.subtype,
     plaid_account_id: a.account_id,
     actual_account_id: null, // this will get populated when the sync is run and the new account is created.
     cursor: null,
@@ -61,7 +62,7 @@ async function ensureAllAccountMappings() {
             console.log('Adding mapping(s) for missing accounts: ', unmappedAccounts);
           await createAccountMappings(accessToken, unmappedAccounts);
         }
-        return { item_id: item.item_id, success: true };
+        return { item_id: item.item_id, success: true, accounts };
       } catch (err) {
         console.error(`Error processing item ${item.item_id}:`, err);
         return { item_id: item.item_id, success: false, error: err.message };
@@ -70,9 +71,11 @@ async function ensureAllAccountMappings() {
   );
 
   const failed = results.filter((r) => !r.success);
+  const allAccounts = results.filter((r) => r.success).flatMap((r) => r.accounts);
   return {
     success: failed.length === 0,
     errors: failed.map((f) => ({ item_id: f.item_id, error: f.error })),
+    accounts: allAccounts,
   };
 }
 

@@ -2,7 +2,8 @@ import api from '@actual-app/api';
 import fs from 'fs';
 import plaid from './plaid.js';
 import db from './db.js';
-import { plaidToActualTransaction } from './helpers.js';
+import { plaidToActualTransaction, plaidToActualType, toActualAmount } from './helpers.js';
+import { ensureAllAccountMappings } from './accounts.js';
 import { config } from './config.js';
 
 // Fetch new transactions for an account. Pass initialCursor=null to fetch all transactions.
@@ -42,7 +43,7 @@ async function fetchPlaidTransactions(accountId, accessToken, initialCursor, ret
   }
 }
 
-async function syncAccount(mapping) {
+async function syncAccount(mapping, isNewAccount = false, preFetchedPlaidAccounts = []) {
   const {
     plaid_account_id: plaidAccountId,
     actual_account_id: actualAccountId,
@@ -53,6 +54,20 @@ async function syncAccount(mapping) {
 
   const summary = { added: 0, removed: 0, modified: 0 };
   const allData = await fetchPlaidTransactions(plaidAccountId, accessToken, cursor);
+
+  if (isNewAccount) {
+    const firstOfMonth = new Date();
+    firstOfMonth.setDate(1);
+    const firstOfMonthStr = firstOfMonth.toISOString().split('T')[0];
+
+    const beforeFilter = allData.added.length;
+    allData.added = allData.added.filter((tx) => tx.date >= firstOfMonthStr);
+    if (config.debug)
+      console.log(
+        `Filtered ${beforeFilter - allData.added.length} historical transactions because this is a new account.`
+      );
+  }
+
   if (config.debug)
     console.log(`\nPlaid transactions fetched for plaid_account_id ${plaidAccountId}\n`, allData);
 
@@ -128,6 +143,45 @@ async function syncAccount(mapping) {
     })
   );
 
+  if (isNewAccount) {
+    const plaidAccount = preFetchedPlaidAccounts.find((a) => a.account_id === plaidAccountId);
+    if (plaidAccount) {
+      const plaidCurrent = plaidAccount.balances.current;
+
+      let targetBalance = toActualAmount(plaidCurrent);
+      if (['credit', 'loan'].includes(plaidAccount.type)) {
+        targetBalance = -targetBalance;
+      }
+
+      const actualBalance = await api.getAccountBalance(actualAccountId);
+      const diff = targetBalance - actualBalance;
+
+      if (diff !== 0) {
+        if (config.debug)
+          console.log(
+            `Adjusting initial balance by ${diff} for ${accountName} (target: ${targetBalance}, actual: ${actualBalance})`
+          );
+        const firstOfMonth = new Date();
+        firstOfMonth.setDate(1);
+
+        const categories = await api.getCategories();
+        const startingBalanceCategory = categories.find((c) => c.name === 'Starting Balances');
+
+        await api.addTransactions(actualAccountId, [
+          {
+            account: actualAccountId,
+            date: firstOfMonth.toISOString().split('T')[0],
+            amount: diff,
+            payee_name: 'Starting Balance',
+            category: startingBalanceCategory ? startingBalanceCategory.id : undefined,
+            cleared: true,
+          },
+        ]);
+        summary.added += 1;
+      }
+    }
+  }
+
   console.log(
     `  ✓ ${summary.added} added, ${summary.modified} modified, ${summary.removed} removed (${accountName})`
   );
@@ -149,21 +203,25 @@ async function runSync() {
     return { results: [] };
   }
 
-  const mappingList = db.data.mappings;
-  if (!mappingList || mappingList.length === 0) {
-    console.log(
-      `No account mappings found. Add some via the UI or ensure the file exists at ${config.dbFile}`
-    );
-    return { results: [] };
-  }
-
   syncRunning = true;
   const results = [];
-  console.log(
-    `\n=== Sync started at ${new Date().toISOString()} (${mappingList.length} accounts) ===`
-  );
+  console.log(`\n=== Sync started at ${new Date().toISOString()} ===`);
 
   try {
+    const { success, errors, accounts: preFetchedPlaidAccounts } = await ensureAllAccountMappings();
+    if (!success) {
+      console.error('Errors while ensuring account mappings:', errors);
+    }
+
+    const mappingList = db.data.mappings;
+    if (!mappingList || mappingList.length === 0) {
+      console.log(
+        `No account mappings found. Add some via the UI or ensure the file exists at ${config.dbFile}`
+      );
+      return { results: [] };
+    }
+
+    console.log(`Syncing ${mappingList.length} mappings`);
     await api.init({
       verbose: config.debug,
       dataDir: config.actual.dataDir,
@@ -172,13 +230,38 @@ async function runSync() {
     });
     await api.downloadBudget(config.actual.budgetId);
 
+    const actualAccounts = await api.getAccounts();
+
     for (const mapping of mappingList) {
       if (!mapping.sync) {
         if (config.debug) console.log(`Skipping sync for ${mapping.account_name} (sync disabled)`);
         continue;
       }
+
+      let isNewAccount = false;
+      const actualAccountExists = actualAccounts.some((a) => a.id === mapping.actual_account_id);
+
+      if (!mapping.actual_account_id || !actualAccountExists) {
+        if (config.debug) console.log(`Creating Actual account for ${mapping.account_name}...`);
+        const newAccountId = await api.createAccount(
+          {
+            name: mapping.account_name,
+            type: plaidToActualType(mapping.type, mapping.subtype),
+            offbudget: false,
+          },
+          0
+        );
+
+        mapping.actual_account_id = newAccountId;
+        await db.update(({ mappings }) => {
+          const m = mappings.find((x) => x.plaid_account_id === mapping.plaid_account_id);
+          if (m) m.actual_account_id = newAccountId;
+        });
+        isNewAccount = true;
+      }
+
       try {
-        const r = await syncAccount(mapping);
+        const r = await syncAccount(mapping, isNewAccount, preFetchedPlaidAccounts);
         results.push({ mapping, ...r, error: null });
       } catch (err) {
         console.error(`  ✗ Failed "${mapping.account_name}": ${err.message}`);

@@ -11,6 +11,7 @@ const dbStructure = { mappings: [], users: [] };
 //   "access_token": "access-sandbox-abc123",
 //   "account_name": "Plaid Checking",
 //   "type": "depository",
+//   "subtype": "checking",
 //   "plaid_account_id": "abc123",
 //   "actual_account_id": "some-uuid-thing",
 //   "cursor": "abc123",

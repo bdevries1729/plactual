@@ -2,6 +2,31 @@ function toActualAmount(plaidAmount) {
   return plaidAmount ? Math.round(plaidAmount * 100) : null;
 }
 
+function plaidToActualType(plaidType, plaidSubtype) {
+  if (plaidType === 'depository') {
+    if (['savings', 'cd', 'money market', 'hsa'].includes(plaidSubtype)) {
+      return 'savings';
+    }
+    return 'checking';
+  }
+  if (plaidType === 'credit') {
+    return 'credit';
+  }
+  if (plaidType === 'loan') {
+    if (['mortgage', 'home equity'].includes(plaidSubtype)) {
+      return 'mortgage';
+    }
+    if (plaidSubtype === 'line of credit') {
+      return 'credit';
+    }
+    return 'debt';
+  }
+  if (plaidType === 'investment' || plaidType === 'brokerage') {
+    return 'investment';
+  }
+  return 'other';
+}
+
 function plaidToActualTransaction(actualAccountId, tx) {
   return {
     account: actualAccountId,
@@ -15,4 +40,4 @@ function plaidToActualTransaction(actualAccountId, tx) {
   };
 }
 
-export { toActualAmount, plaidToActualTransaction };
+export { toActualAmount, plaidToActualTransaction, plaidToActualType };

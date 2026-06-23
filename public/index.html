@@ -382,6 +382,32 @@
         pointer-events: none;
       }
 
+      .icon-btn {
+        background: transparent;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px;
+        border-radius: 6px;
+        margin-left: 6px;
+        transition:
+          color 0.15s,
+          background 0.15s;
+      }
+
+      .icon-btn:hover:not(:disabled) {
+        color: var(--text);
+        background: var(--surface-2);
+      }
+
+      .icon-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
       .btn-primary {
         background: var(--accent);
         color: #fff;
@@ -555,6 +581,22 @@
 
       <div class="section-header">
         <span class="section-title">Linked Accounts</span>
+        <button class="icon-btn" id="refresh-btn" disabled title="Refresh Accounts">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
         <span
           id="sync-header-label"
           style="
@@ -813,6 +855,22 @@
         }
       });
 
+      // ── Refresh mappings ───────────────────────────────────────────────────
+      document.getElementById('refresh-btn').addEventListener('click', async () => {
+        setBtnState('refresh', 'loading', 'Refreshing…');
+        try {
+          const res = await fetch('/api/mappings/refresh', { method: 'POST' });
+          if (!res.ok) throw new Error('Refresh failed');
+          await loadAccounts();
+          await loadStatus();
+          showToast('Mappings refreshed', 'success');
+        } catch (e) {
+          showToast(e.message, 'error');
+        } finally {
+          setBtnState('refresh', 'ready');
+        }
+      });
+
       // ── Helpers ──────────────────────────────────────────────────────────
       function setBtnState(which, state, label) {
         const btn = document.getElementById(`${which}-btn`);
@@ -826,10 +884,20 @@
             'afterbegin',
             '<div class="spinner" id="spinner-' + which + '"></div>'
           );
-          textEl.textContent = label;
+          if (textEl) textEl.textContent = label;
+          if (which === 'refresh') {
+            const svg = btn.querySelector('svg');
+            if (svg) svg.style.display = 'none';
+          }
         } else {
           document.getElementById(`spinner-${which}`)?.remove();
-          textEl.textContent = which === 'link' ? 'Link Institution' : 'Sync Now';
+          if (textEl) {
+            textEl.textContent = which === 'link' ? 'Link Institution' : 'Sync Now';
+          }
+          if (which === 'refresh') {
+            const svg = btn.querySelector('svg');
+            if (svg) svg.style.display = 'block';
+          }
         }
       }
 
@@ -844,6 +912,7 @@
       // ── Boot ─────────────────────────────────────────────────────────────
       (async () => {
         await Promise.all([loadStatus(), loadAccounts()]);
+        document.getElementById('refresh-btn').disabled = false;
         document.getElementById('sync-btn').disabled = false;
         await initPlaid();
       })();
