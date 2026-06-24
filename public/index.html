@@ -762,8 +762,10 @@
           if (syncHeaderLabel) syncHeaderLabel.style.display = 'block';
 
           const grouped = list.reduce((acc, m) => {
-            if (!acc[m.item_id]) acc[m.item_id] = { name: m.institution_name, items: [] };
+            if (!acc[m.item_id])
+              acc[m.item_id] = { name: m.institution_name, items: [], login_required: false };
             acc[m.item_id].items.push(m);
+            if (m.login_required) acc[m.item_id].login_required = true;
             return acc;
           }, {});
 
@@ -773,6 +775,7 @@
           <div class="institution-group" id="group-${itemId}">
             <div class="institution-header">
               ${escHtml(group.name)} <span class="badge" id="badge-${itemId}" style="margin-left: 8px; background: var(--surface); color: var(--muted); border-color: var(--border);">${group.items.length} account${group.items.length !== 1 ? 's' : ''}</span>
+              ${group.login_required ? `<button style="background: var(--danger); color: white; border: none; border-radius: 5px; padding: 4px 10px; font-size: 10px; font-weight: 600; cursor: pointer; margin-left: auto;" onclick="startUpdateMode('${itemId}')">Reconnect</button>` : ''}
             </div>
             ${group.items
               .map(
@@ -815,6 +818,40 @@
           inputEl.checked = !newValue;
         } finally {
           inputEl.disabled = false;
+        }
+      }
+
+      // ── Plaid Update Mode ────────────────────────────────────────────────
+      async function startUpdateMode(itemId) {
+        try {
+          const res = await fetch('/api/create_link_token_update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: itemId }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not create update link token');
+
+          const { link_token } = data;
+
+          const updateHandler = Plaid.create({
+            token: link_token,
+            onSuccess: async (publicToken, metadata) => {
+              try {
+                await fetch(`/api/mappings/${itemId}/resolve_login`, { method: 'POST' });
+                showToast('Login updated successfully', 'success');
+                await loadAccounts();
+              } catch (e) {
+                showToast('Failed to resolve login state', 'error');
+              }
+            },
+            onExit: (err) => {
+              if (err) showToast(err.display_message || 'Update exited', 'error');
+            },
+          });
+          updateHandler.open();
+        } catch (e) {
+          showToast(e.message, 'error');
         }
       }
 
@@ -886,11 +923,13 @@
           log.classList.add('open');
           showToast('Sync complete', 'success');
           await loadStatus();
+          await loadAccounts();
         } catch (e) {
           logEl.innerHTML = `<span class="log-err">✕ ${escHtml(e.message)}</span>`;
           log.classList.add('open');
           showToast(e.message, 'error');
           await loadStatus();
+          await loadAccounts();
         } finally {
           setBtnState('sync', 'ready');
         }

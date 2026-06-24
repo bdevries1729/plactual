@@ -10,6 +10,13 @@ import { checkExternalHealth } from './health.js';
 
 const router = express.Router();
 
+router.get('/test', async (req, res) => {
+  const response = await plaid.sandboxItemResetLogin({
+    access_token: 'access-sandbox-a9f17270-759d-42c9-965c-793035eae015',
+  });
+  res.json(response.data);
+});
+
 router.get('/mappings', async (req, res) => {
   const list = db.data.mappings.map(({ access_token: _access_token, ...rest }) => rest); // omit raw tokens for safety
   if (config.debug) console.log('Mappings:\n', list);
@@ -63,6 +70,50 @@ router.post('/create_link_token', async (req, res) => {
   const response = await plaid.linkTokenCreate(linkTokenRequest);
   if (config.debug) console.log('Link token create response data:\n', response.data, '\n');
   res.json({ link_token: response.data.link_token });
+});
+
+router.post('/create_link_token_update', async (req, res) => {
+  const { item_id } = req.body;
+  if (!item_id) {
+    return res.status(400).json({ error: 'item_id required' });
+  }
+
+  const mapping = db.data.mappings.find((m) => m.item_id === item_id);
+  if (!mapping || !mapping.access_token) {
+    return res.status(404).json({ error: 'Mapping or access token not found for item_id' });
+  }
+
+  const plaidUserId = db.data.users[0]?.plaid_user_id || (await generatePlaidUserId());
+  const linkTokenRequest = {
+    user_id: plaidUserId,
+    client_name: 'Plactual',
+    country_codes: ['US'],
+    language: 'en',
+    access_token: mapping.access_token,
+  };
+
+  const response = await plaid.linkTokenCreate(linkTokenRequest);
+  if (config.debug) console.log('Link token update create response data:\n', response.data, '\n');
+  res.json({ link_token: response.data.link_token });
+});
+
+router.post('/mappings/:item_id/resolve_login', async (req, res) => {
+  const { item_id } = req.params;
+
+  let updated = false;
+  await db.update(({ mappings }) => {
+    mappings.forEach((m) => {
+      if (m.item_id === item_id) {
+        m.login_required = false;
+        updated = true;
+      }
+    });
+  });
+
+  if (!updated) {
+    return res.status(404).json({ ok: false, error: 'Mapping not found' });
+  }
+  res.json({ ok: true });
 });
 
 router.post('/exchange_public_token', async (req, res) => {

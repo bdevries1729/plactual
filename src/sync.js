@@ -37,6 +37,10 @@ async function fetchPlaidTransactions(accountId, accessToken, initialCursor, ret
     } while (hasMore);
     return allData;
   } catch (error) {
+    if (error?.response?.data?.error_code === 'ITEM_LOGIN_REQUIRED') {
+      console.error('Item login required for account:', accountId);
+      throw new Error('ITEM_LOGIN_REQUIRED', { cause: error });
+    }
     console.error(`Error getting Plaid transactions: ${JSON.stringify(error)} Trying again.`);
     await new Promise((resolve) => setTimeout(resolve, 1000));
     return fetchPlaidTransactions(accountId, accessToken, initialCursor, retriesLeft - 1);
@@ -108,7 +112,9 @@ async function syncAccount(mapping, isNewAccount = false, preFetchedPlaidAccount
           txNotThereYet.push(tx);
           return;
         }
-        return api.updateTransaction(id, plaidToActualTransaction(actualAccountId, tx));
+        const updateData = plaidToActualTransaction(actualAccountId, tx);
+        delete updateData.payee_name;
+        return api.updateTransaction(id, updateData);
       })
     );
     if (config.debug) console.log('Modified:\n', modified);
@@ -272,6 +278,15 @@ async function runSync() {
         results.push({ mapping, ...r, error: null });
       } catch (err) {
         console.error(`  ✗ Failed "${mapping.account_name}": ${err.message}`);
+        if (err.message === 'ITEM_LOGIN_REQUIRED') {
+          await db.update(({ mappings }) => {
+            mappings
+              .filter((m) => m.item_id === mapping.item_id)
+              .forEach((m) => {
+                m.login_required = true;
+              });
+          });
+        }
         results.push({ mapping, added: 0, modified: 0, removed: 0, error: err.message });
       }
     }

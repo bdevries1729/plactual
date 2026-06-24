@@ -20,6 +20,7 @@ async function createAccountMappings(accessToken, accountIds = undefined) {
     actual_account_id: null, // this will get populated when the sync is run and the new account is created.
     cursor: null,
     sync: true,
+    login_required: false,
   }));
 
   await db.update(({ mappings }) => mappings.push(...newMappings));
@@ -64,6 +65,18 @@ async function ensureAllAccountMappings() {
         }
         return { item_id: item.item_id, success: true, accounts };
       } catch (err) {
+        if (err?.response?.data?.error_code === 'ITEM_LOGIN_REQUIRED') {
+          console.error(`Item login required for item ${item.item_id}`);
+          await db.update(({ mappings }) => {
+            mappings
+              .filter((m) => m.item_id === item.item_id)
+              .forEach((m) => {
+                m.login_required = true;
+              });
+          });
+          // We successfully determined it needs login, so don't fail the whole refresh
+          return { item_id: item.item_id, success: true, accounts: [] };
+        }
         console.error(`Error processing item ${item.item_id}:`, err);
         return { item_id: item.item_id, success: false, error: err.message };
       }
