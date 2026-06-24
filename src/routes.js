@@ -10,13 +10,6 @@ import { checkExternalHealth } from './health.js';
 
 const router = express.Router();
 
-router.get('/test', async (req, res) => {
-  const response = await plaid.sandboxItemResetLogin({
-    access_token: 'access-sandbox-a9f17270-759d-42c9-965c-793035eae015',
-  });
-  res.json(response.data);
-});
-
 router.get('/mappings', async (req, res) => {
   const list = db.data.mappings.map(({ access_token: _access_token, ...rest }) => rest); // omit raw tokens for safety
   if (config.debug) console.log('Mappings:\n', list);
