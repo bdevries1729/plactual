@@ -7,7 +7,10 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies deterministically
-RUN npm ci
+# native dependencies like better-sqlite3 require build tools on Alpine
+RUN apk add --no-cache python3 make g++ \
+    && npm ci \
+    && apk del python3 make g++
 
 # Copy application code
 COPY src/ ./src/
