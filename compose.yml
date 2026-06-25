@@ -1,0 +1,25 @@
+services:
+  plactual:
+    image: ghcr.io/bdevries1729/plactual:latest
+    container_name: plactual
+    ports:
+      - '3131:3131'
+    environment:
+      - NODE_ENV=production
+      - CRON_SCHEDULE=0 */6 * * *
+      - PLAID_ENV=sandbox
+      - PLAID_CLIENT_ID=your_plaid_client_id
+      - PLAID_SECRET=your_plaid_secret
+      - ACTUAL_SERVER_URL=http://actualbudget:5006
+      - ACTUAL_PASSWORD=your_actual_password
+      - ACTUAL_BUDGET_ID=your_actual_budget_id
+    volumes:
+      - ./data/sync-files:/data/sync-files
+
+  # You can optionally include your actualbudget server here if you want them on the same network
+  # actualbudget:
+  #   image: actualbudget/actual-server:latest
+  #   ports:
+  #     - "5006:5006"
+  #   volumes:
+  #     - ./actual-data:/data

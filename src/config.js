@@ -13,7 +13,7 @@ const config = {
     secret: process.env.PLAID_SECRET,
   },
   actual: {
-    dataDir: process.env.ACTUAL_DATA_DIR || '/data/user-files',
+    dataDir: process.env.ACTUAL_DATA_DIR || '/data/actual-cache',
     serverUrl: process.env.ACTUAL_SERVER_URL || 'http://actualbudget:5006',
     password: process.env.ACTUAL_PASSWORD,
     budgetId: process.env.ACTUAL_BUDGET_ID,
