@@ -1,30 +1,7 @@
 function toActualAmount(plaidAmount) {
-  return plaidAmount ? Math.round(plaidAmount * 100) : null;
-}
-
-function plaidToActualType(plaidType, plaidSubtype) {
-  if (plaidType === 'depository') {
-    if (['savings', 'cd', 'money market', 'hsa'].includes(plaidSubtype)) {
-      return 'savings';
-    }
-    return 'checking';
-  }
-  if (plaidType === 'credit') {
-    return 'credit';
-  }
-  if (plaidType === 'loan') {
-    if (['mortgage', 'home equity'].includes(plaidSubtype)) {
-      return 'mortgage';
-    }
-    if (plaidSubtype === 'line of credit') {
-      return 'credit';
-    }
-    return 'debt';
-  }
-  if (plaidType === 'investment' || plaidType === 'brokerage') {
-    return 'investment';
-  }
-  return 'other';
+  // Only null/undefined map to null; a genuine 0 must stay 0 (not become null,
+  // which would poison downstream arithmetic with NaN).
+  return plaidAmount == null ? null : Math.round(plaidAmount * 100);
 }
 
 function plaidToActualTransaction(actualAccountId, tx) {
@@ -40,4 +17,4 @@ function plaidToActualTransaction(actualAccountId, tx) {
   };
 }
 
-export { toActualAmount, plaidToActualTransaction, plaidToActualType };
+export { toActualAmount, plaidToActualTransaction };

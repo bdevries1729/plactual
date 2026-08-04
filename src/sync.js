@@ -2,7 +2,7 @@ import api from '@actual-app/api';
 import fs from 'fs';
 import plaid from './plaid.js';
 import db from './db.js';
-import { plaidToActualTransaction, plaidToActualType, toActualAmount } from './helpers.js';
+import { plaidToActualTransaction, toActualAmount } from './helpers.js';
 import { ensureAllAccountMappings } from './accounts.js';
 import { config } from './config.js';
 
@@ -56,7 +56,7 @@ async function syncAccount(mapping, isNewAccount = false, preFetchedPlaidAccount
     cursor,
   } = mapping;
 
-  const summary = { added: 0, removed: 0, modified: 0 };
+  const summary = { added: 0, removed: 0, modified: 0, error: null };
   const allData = await fetchPlaidTransactions(plaidAccountId, accessToken, cursor);
 
   if (isNewAccount) {
@@ -82,17 +82,44 @@ async function syncAccount(mapping, isNewAccount = false, preFetchedPlaidAccount
     if (config.debug) console.log(`No transactions for account_name: ${accountName}`);
     if (!isNewAccount) return summary;
   } else {
+    // Attempt every phase (remove / modify / add) independently so a failure in
+    // one doesn't starve the others. Errors are collected here and dealt with at
+    // the end rather than short-circuiting.
+    let hadError = false;
+
+    // Plaid's `removed` entries only carry the Plaid transaction_id, which we
+    // store as Actual's `imported_id`. deleteTransaction needs Actual's own id,
+    // so resolve imported_id -> id first (a delete on an unknown id is a no-op).
+    const removedImportedIds = allData.removed.map((tx) => tx.transaction_id);
+    const removedRows = removedImportedIds.length
+      ? (
+          await api.aqlQuery(
+            api
+              .q('transactions')
+              .filter({ account: actualAccountId, imported_id: { $oneof: removedImportedIds } })
+              .select(['id', 'imported_id'])
+          )
+        ).data
+      : [];
+    const removedActualIds = removedRows.map((r) => r.id);
+
     const removed = await Promise.allSettled(
-      allData.removed.map((tx) => api.deleteTransaction(tx.transaction_id))
+      removedActualIds.map((id) => api.deleteTransaction(id))
     );
     if (config.debug) console.log('Removed:\n', removed);
     summary.removed = removed.filter((tx) => tx.status === 'fulfilled').length;
-    if (summary.removed !== allData.removed.length) {
+    const removedRejected = removed.filter((tx) => tx.status === 'rejected');
+    if (removedRejected.length > 0) {
+      hadError = true;
       console.error(
         'Unable to remove all transactions.',
-        removed.filter((tx) => tx.status === 'rejected').map((tx) => tx.reason)
+        removedRejected.map((tx) => tx.reason)
       );
-      return summary;
+    }
+    if (removedActualIds.length !== allData.removed.length && config.debug) {
+      console.log(
+        `${allData.removed.length - removedActualIds.length} removed transaction(s) were not found in Actual (already gone or never imported).`
+      );
     }
 
     const txNotThereYet = [];
@@ -122,11 +149,11 @@ async function syncAccount(mapping, isNewAccount = false, preFetchedPlaidAccount
     summary.modified = modified.filter((tx) => tx.status === 'fulfilled').length;
     const modifiedRejected = modified.filter((tx) => tx.status === 'rejected');
     if (modifiedRejected.length > 0) {
+      hadError = true;
       console.error(
         'Unable to modify all transactions.',
         modifiedRejected.map((tx) => tx.reason)
       );
-      return summary;
     }
 
     const addedOrModifiedButNotThere = [...txNotThereYet, ...allData.added].map((tx) =>
@@ -139,7 +166,15 @@ async function syncAccount(mapping, isNewAccount = false, preFetchedPlaidAccount
     summary.added = importResult.added.length;
     summary.modified += importResult.updated.length;
     if (importResult.errors.length > 0) {
+      hadError = true;
       console.error('Error importing transactions.', importResult.errors);
+    }
+
+    // If any phase failed, leave the cursor untouched so the next sync re-fetches
+    // and retries the whole diff (every operation above is idempotent), and
+    // surface the error so the caller doesn't report a false success.
+    if (hadError) {
+      summary.error = 'Sync completed with errors; will retry on next run.';
       return summary;
     }
   }
@@ -154,9 +189,10 @@ async function syncAccount(mapping, isNewAccount = false, preFetchedPlaidAccount
 
   if (isNewAccount) {
     const plaidAccount = preFetchedPlaidAccounts.find((a) => a.account_id === plaidAccountId);
-    if (plaidAccount) {
-      const plaidCurrent = plaidAccount.balances.current;
-
+    const plaidCurrent = plaidAccount?.balances?.current;
+    // Plaid's `balances.current` can be null; skip the adjustment rather than
+    // producing a NaN amount from arithmetic on a null balance.
+    if (plaidAccount && plaidCurrent != null) {
       let targetBalance = toActualAmount(plaidCurrent);
       if (['credit', 'loan'].includes(plaidAccount.type)) {
         targetBalance = -targetBalance;
@@ -252,10 +288,15 @@ async function runSync() {
 
       if (!mapping.actual_account_id || !actualAccountExists) {
         if (config.debug) console.log(`Creating Actual account for ${mapping.account_name}...`);
+        // Actual's account model has no `type` field — createAccount silently
+        // drops it — so we don't pass one. Instead we keep the raw Plaid
+        // `type`/`subtype` on the db.json mapping (see accounts.js): a durable,
+        // provider-agnostic record. If Actual ever reintroduces account types,
+        // its taxonomy likely won't match Plaid's, so we map from the raw values
+        // at that point rather than guessing a translation now.
         const newAccountId = await api.createAccount(
           {
             name: mapping.account_name,
-            type: plaidToActualType(mapping.type, mapping.subtype),
             offbudget: false,
           },
           0
@@ -275,7 +316,7 @@ async function runSync() {
 
       try {
         const r = await syncAccount(mapping, isNewAccount, preFetchedPlaidAccounts);
-        results.push({ mapping, ...r, error: null });
+        results.push({ mapping, ...r });
       } catch (err) {
         console.error(`  ✗ Failed "${mapping.account_name}": ${err.message}`);
         if (err.message === 'ITEM_LOGIN_REQUIRED') {

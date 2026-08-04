@@ -63,12 +63,12 @@ async function validateActual() {
   await api.shutdown();
 }
 
-function validateConfig() {
+async function validateConfig() {
   if (config.debug) console.log('\nServer Configuration:\n', config);
 
   validateCronSchedule();
   validatePlaid();
-  validateActual();
+  await validateActual();
 
   if (config.debug) console.log('Configuration validated.\n');
 }

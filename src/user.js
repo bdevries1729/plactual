@@ -9,7 +9,9 @@ async function generatePlaidUserId() {
   const response = await plaid.userCreate({ client_user_id: clientUser });
   if (config.debug) console.log('Create user response data:\n', response.data, '\n');
   const plaidUserId = response.data.user_id;
-  db.update(({ users }) => (users[0] = { client_user_id: clientUser, plaid_user_id: plaidUserId }));
+  await db.update(
+    ({ users }) => (users[0] = { client_user_id: clientUser, plaid_user_id: plaidUserId })
+  );
   return plaidUserId;
 }
 

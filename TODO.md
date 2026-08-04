@@ -2,7 +2,8 @@
 
 - what happens when you login but approve a different set of accounts than originally?
 - update the README.md
-- add a github workflow which publishes a copy of the container or perhaps the node package.
+- update the security
+
 
 ## Notes:
 

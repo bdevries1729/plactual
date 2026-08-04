@@ -14,6 +14,9 @@ async function createAccountMappings(accessToken, accountIds = undefined) {
     item_id: item.item_id,
     access_token: accessToken,
     account_name: a.name,
+    // Raw Plaid account type/subtype, kept for reference. Actual's account model
+    // has no type field, so these aren't sent to createAccount (see sync.js);
+    // they're preserved here in case Actual reintroduces account types later.
     type: a.type,
     subtype: a.subtype,
     plaid_account_id: a.account_id,

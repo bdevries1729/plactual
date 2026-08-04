@@ -5,7 +5,7 @@ import routes from './routes.js';
 import { runSync } from './sync.js';
 import { config, validateConfig } from './config.js';
 
-validateConfig();
+await validateConfig();
 
 const app = express();
 app.use(express.json());

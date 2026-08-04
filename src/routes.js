@@ -56,7 +56,7 @@ router.post('/create_link_token', async (req, res) => {
   const linkTokenRequest = {
     user_id: plaidUserId,
     client_name: 'Plactual',
-    products: [Products.Auth, Products.Transactions],
+    products: [Products.Transactions],
     country_codes: ['US'],
     language: 'en',
   };
