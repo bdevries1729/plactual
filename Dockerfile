@@ -1,4 +1,6 @@
-FROM node:20-alpine
+# Node 21+ is required: @actual-app/api touches the `navigator` global at
+# module load time, and Node only exposes it from v21 (platform from v21.2).
+FROM node:24-alpine
 
 # Set working directory
 WORKDIR /app
