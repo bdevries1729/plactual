@@ -160,6 +160,18 @@ treat reaching the port as equivalent to being logged in.
 - **If you script the API**, send `Content-Type: application/json` on every `POST`/`PATCH` — even
   the ones that take no body, or you'll get a `415`.
 
+Every push and pull request is scanned for committed credentials by the
+[Secret Scan](.github/workflows/secret-scan.yml) workflow, which reads its rules from
+`.gitleaks.toml`. It scans the full history rather than just the current files, because a secret
+that was committed and later deleted is still in the repository. Gitleaks' built-in rules do not
+recognise Plaid access tokens, so `.gitleaks.toml` adds rules for them — if you fork this, keep
+them.
+
+If a credential ever does get committed, **revoke it first**; scrubbing the history is secondary
+and, on a repo that has been pushed, incomplete. A Plaid access token is revoked with
+[`/item/remove`](https://plaid.com/docs/api/items/#itemremove), which leaves it returning
+`ITEM_NOT_FOUND`.
+
 ## How It Works
 
 1. You link an institution in the web UI through Plaid Link. Plactual exchanges the resulting public token for an access token and records one mapping per Plaid account in `db.json`.
