@@ -1,10 +1,11 @@
 import cron from 'node-cron';
+import api from '@actual-app/api';
 import fs from 'fs';
 
 function getSecret(name) {
   const path = process.env[`${name}_FILE`];
   if (path && fs.existsSync(path)) {
-    return fs.readFileSync(path, 'utf8').trim();
+    return fs.readFileSync(path, "utf8").trim();
   }
   return process.env[name];
 }
@@ -52,14 +53,31 @@ function validatePlaid() {
   }
 }
 
-// Note: the Actual server is validated separately, in actual.js — it needs a
-// login, and that login is kept open for the rest of the process rather than
-// being torn down here.
-function validateConfig() {
+async function validateActual() {
+  if (!config.actual.password) {
+    console.error('ACTUAL_PASSWORD is not configured.');
+    process.exit(1);
+  }
+  await api.init({
+    verbose: config.debug,
+    dataDir: config.actual.dataDir,
+    serverURL: config.actual.serverUrl,
+    password: config.actual.password,
+  });
+  const budgets = await api.getBudgets();
+  if (!budgets.some((b) => b.groupId === config.actual.budgetId)) {
+    console.error(`No budgets found matching ACTUAL_BUDGET_ID: "${config.actual.budgetId}"`);
+    process.exit(1);
+  }
+  await api.shutdown();
+}
+
+async function validateConfig() {
   if (config.debug) console.log('\nServer Configuration:\n', config);
 
   validateCronSchedule();
   validatePlaid();
+  await validateActual();
 
   if (config.debug) console.log('Configuration validated.\n');
 }
