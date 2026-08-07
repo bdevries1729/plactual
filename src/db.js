@@ -1,28 +1,18 @@
 import { JSONFilePreset } from 'lowdb/node';
 import { config } from './config.js';
 
+// lowdb is schemaless, so the shape lives here:
+//
+// mappings[] — one row per Plaid account, the join between the two systems.
+//   institution_id, institution_name, item_id, access_token
+//   account_name, type, subtype        (type/subtype are raw Plaid values)
+//   plaid_account_id, actual_account_id (null until the first sync creates it)
+//   cursor                             (Plaid transactionsSync cursor, null = fetch all)
+//   sync                               (user toggle)
+//   login_required                     (set when Plaid returns ITEM_LOGIN_REQUIRED)
+//
+// users[] — at most one row: { client_user_id, plaid_user_id }
 const dbStructure = { mappings: [], users: [] };
-
-// mappings
-// {
-//   "institution_id": "ins_56",
-//   "institution_name": "Chase",
-//   "item_id": "abc123",
-//   "access_token": "access-sandbox-abc123",
-//   "account_name": "Plaid Checking",
-//   "type": "depository",
-//   "subtype": "checking",
-//   "plaid_account_id": "abc123",
-//   "actual_account_id": "some-uuid-thing",
-//   "cursor": "abc123",
-//   "sync": true
-// }
-
-// users
-// {
-//   "client_user_id": "some-UUID",
-//   "plaid_user_id": "some-other-UUID"
-// }
 
 const db = await JSONFilePreset(config.dbFile, dbStructure);
 

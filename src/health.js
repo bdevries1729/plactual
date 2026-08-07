@@ -1,11 +1,14 @@
 import plaid from './plaid.js';
 import { config } from './config.js';
 
-let cachedHealth = { plaid: 'unknown', actual: 'unknown', lastCheck: 0 };
+const CACHE_TTL_MS = 60_000;
+const PROBE_TIMEOUT_MS = 5_000;
+
+const cachedHealth = { plaid: 'unknown', actual: 'unknown', lastCheck: 0 };
 
 export async function checkExternalHealth() {
   const now = Date.now();
-  if (now - cachedHealth.lastCheck < 60000) return cachedHealth;
+  if (now - cachedHealth.lastCheck < CACHE_TTL_MS) return cachedHealth;
 
   try {
     await plaid.categoriesGet({});
@@ -15,7 +18,7 @@ export async function checkExternalHealth() {
   }
 
   try {
-    await fetch(config.actual.serverUrl, { signal: AbortSignal.timeout(5000) });
+    await fetch(config.actual.serverUrl, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
     cachedHealth.actual = 'up';
   } catch {
     cachedHealth.actual = 'down';

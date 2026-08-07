@@ -5,12 +5,12 @@
   "license": "MIT",
   "author": "Ben DeVries",
   "type": "module",
-  "main": "index.js",
+  "main": "src/index.js",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test",
     "start": "node src/index.js",
     "dev": "nodemon --env-file=.env src/index.js",
     "lint": "eslint .",
@@ -18,11 +18,9 @@
   },
   "dependencies": {
     "@actual-app/api": "^26.6.0",
-    "body-parser": "^2.2.2",
     "express": "^5.2.1",
     "lowdb": "^7.0.1",
     "node-cron": "^4.2.1",
-    "path": "^0.12.7",
     "plaid": "^42.2.0"
   },
   "devDependencies": {

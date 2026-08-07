@@ -80,7 +80,7 @@ Visit `http://localhost:3131` in your browser to link your bank accounts.
 
 - `PORT` (optional) - Port for the web server. Default is `3131`.
 - `CRON_SCHEDULE` (optional) - Cron expression for the background sync job. Default is `0 */6 * * *` (every 6 hours). Validated at startup.
-- `DEBUG` (optional) - Set to `true` for verbose logging. Default is `false`.
+- `DEBUG` (optional) - Set to `true` for verbose logging. Default is `false`. Credentials are redacted from the logs even when this is on.
 
 ### Plaid
 
@@ -135,6 +135,8 @@ If an institution needs you to log in again, Plaid returns `ITEM_LOGIN_REQUIRED`
 
 The web UI is built on a small JSON API under `/api`. Access tokens are never returned in any response.
 
+Errors are returned as `{ "ok": false, "error": "..." }` with an appropriate status code.
+
 | Method  | Endpoint                               | Description                                                     |
 | ------- | -------------------------------------- | --------------------------------------------------------------- |
 | `GET`   | `/api/status`                          | Item count, cron schedule, Plaid env, and Plaid/Actual health.  |
@@ -145,7 +147,7 @@ The web UI is built on a small JSON API under `/api`. Access tokens are never re
 | `POST`  | `/api/create_link_token`               | Create a Plaid Link token for linking a new institution.        |
 | `POST`  | `/api/create_link_token_update`        | Create a Link token in update mode (`{ "item_id": "..." }`).    |
 | `POST`  | `/api/exchange_public_token`           | Exchange a Plaid public token and create account mappings.      |
-| `POST`  | `/api/sync`                            | Trigger a sync immediately.                                     |
+| `POST`  | `/api/sync`                            | Trigger a sync immediately (`409` if one is already running).   |
 
 ## Local Development
 
@@ -175,24 +177,37 @@ If you want to run or develop Plactual locally without Docker:
 Other scripts:
 
 - `npm start` - Runs the server with plain `node`.
+- `npm test` - Runs the unit tests (`node --test`, no test framework needed).
 - `npm run lint` - Runs ESLint.
 - `npm run format` - Formats code with Prettier.
 
+### Testing against the Plaid sandbox
+
+With `PLAID_ENV=sandbox` you can link accounts using Plaid's test credentials
+(`user_good` / `pass_good`). Two sandbox-only endpoints are handy for exercising a
+sync without waiting on a real bank:
+
+- [`/sandbox/public_token/create`](https://plaid.com/docs/api/sandbox/#sandboxpublic_tokencreate) - mint a public token directly, skipping the Link UI.
+- [`/sandbox/transactions/create`](https://plaid.com/docs/api/sandbox/#sandboxtransactionscreate) - add transactions to a sandbox account so the next sync has something to import.
+
 ### Project layout
 
-| File                | Purpose                                                   |
-| ------------------- | --------------------------------------------------------- |
-| `src/index.js`      | Express app, middleware, cron scheduler, entry point.     |
-| `src/config.js`     | Environment/secret loading and startup validation.        |
-| `src/routes.js`     | The `/api` routes.                                        |
-| `src/sync.js`       | Plaid → Actual transaction sync.                          |
-| `src/accounts.js`   | Creating and reconciling Plaid ↔ Actual account mappings. |
-| `src/plaid.js`      | Configured Plaid API client.                              |
-| `src/user.js`       | Plaid user creation and item lookup.                      |
-| `src/db.js`         | lowdb JSON store (`mappings`, `users`).                   |
-| `src/health.js`     | Cached health checks for Plaid and Actual.                |
-| `src/helpers.js`    | Plaid → Actual transaction/amount conversion.             |
-| `public/index.html` | The single-page web UI.                                   |
+| File                | Purpose                                                    |
+| ------------------- | ---------------------------------------------------------- |
+| `src/index.js`      | Express app, middleware, cron scheduler, entry point.      |
+| `src/config.js`     | Environment/secret loading and startup validation.         |
+| `src/routes.js`     | The `/api` routes.                                         |
+| `src/sync.js`       | Plaid → Actual transaction sync.                           |
+| `src/accounts.js`   | Creating and reconciling Plaid ↔ Actual account mappings.  |
+| `src/plaid.js`      | Configured Plaid API client.                               |
+| `src/user.js`       | Plaid user creation and item lookup.                       |
+| `src/db.js`         | lowdb JSON store (`mappings`, `users`).                    |
+| `src/health.js`     | Cached health checks for Plaid and Actual.                 |
+| `src/helpers.js`    | Plaid → Actual transaction/amount/date conversion.         |
+| `public/index.html` | Web UI markup and the `<template>`s the account list uses. |
+| `public/styles.css` | Web UI styles.                                             |
+| `public/app.js`     | Web UI behaviour.                                          |
+| `test/`             | Unit tests for the pure conversion helpers.                |
 
 ## Releases
 
