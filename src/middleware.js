@@ -1,3 +1,34 @@
+// The page is self-hosted and has exactly two third parties: Plaid Link (the
+// script, plus the iframe it opens) and Google Fonts. Everything else is 'self'
+// or denied outright. Note that Subresource Integrity is deliberately *not* used
+// on either — see the note in public/index.html.
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  // cdn.plaid.com serves link-initialize.js…
+  "script-src 'self' https://cdn.plaid.com",
+  // …and link.html, which Link opens in an iframe.
+  'frame-src https://cdn.plaid.com',
+  "style-src 'self' https://fonts.googleapis.com",
+  'font-src https://fonts.gstatic.com',
+  // data: covers nothing today, but keeps inline SVG/data icons working.
+  "img-src 'self' data:",
+  // The UI only ever talks to its own /api.
+  "connect-src 'self'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+].join('; ');
+
+function securityHeaders(req, res, next) {
+  res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  // frame-ancestors above covers modern browsers; this is for the rest.
+  res.setHeader('X-Frame-Options', 'DENY');
+  next();
+}
+
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 // Plactual has no login of its own, so any page in the user's browser can reach
@@ -41,4 +72,4 @@ function refuseCrossSiteWrites(req, res, next) {
   next();
 }
 
-export { refuseCrossSiteWrites };
+export { refuseCrossSiteWrites, securityHeaders, CONTENT_SECURITY_POLICY };

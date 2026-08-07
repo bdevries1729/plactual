@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { refuseCrossSiteWrites } from '../src/middleware.js';
+import {
+  refuseCrossSiteWrites,
+  securityHeaders,
+  CONTENT_SECURITY_POLICY,
+} from '../src/middleware.js';
 
 // Minimal stand-ins for Express's req/res: the middleware only reads headers
 // (case-insensitively, as req.get does) and either calls next() or answers.
@@ -28,6 +32,63 @@ function run(req) {
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
+describe('securityHeaders', () => {
+  function headersFor() {
+    const set = {};
+    let nexted = false;
+    securityHeaders({}, { setHeader: (k, v) => (set[k] = v) }, () => (nexted = true));
+    return { set, nexted };
+  }
+
+  it('sets the policy and the companion headers, then continues', () => {
+    const { set, nexted } = headersFor();
+    assert.equal(nexted, true);
+    assert.equal(set['Content-Security-Policy'], CONTENT_SECURITY_POLICY);
+    assert.equal(set['X-Content-Type-Options'], 'nosniff');
+    assert.equal(set['Referrer-Policy'], 'no-referrer');
+    assert.equal(set['X-Frame-Options'], 'DENY');
+  });
+
+  // These four directives were verified against the real Plaid Link flow in a
+  // browser: with any of them missing or narrower, Link fails to load or open.
+  // Tighten them only after re-testing that flow.
+  it('allows exactly what Plaid Link and the webfonts need', () => {
+    const directives = new Map(
+      CONTENT_SECURITY_POLICY.split('; ').map((d) => {
+        const [name, ...values] = d.split(' ');
+        return [name, values];
+      })
+    );
+
+    assert.deepEqual(directives.get('script-src'), ["'self'", 'https://cdn.plaid.com']);
+    // Link opens link.html from the same host in an iframe.
+    assert.deepEqual(directives.get('frame-src'), ['https://cdn.plaid.com']);
+    assert.deepEqual(directives.get('style-src'), ["'self'", 'https://fonts.googleapis.com']);
+    assert.deepEqual(directives.get('font-src'), ['https://fonts.gstatic.com']);
+  });
+
+  it('keeps the restrictive defaults that make the rest meaningful', () => {
+    for (const directive of [
+      "default-src 'self'",
+      "connect-src 'self'",
+      "base-uri 'none'",
+      "form-action 'none'",
+      "frame-ancestors 'none'",
+      "object-src 'none'",
+    ]) {
+      assert.ok(
+        CONTENT_SECURITY_POLICY.includes(directive),
+        `policy should contain "${directive}"`
+      );
+    }
+  });
+
+  it("does not resort to 'unsafe-inline' or 'unsafe-eval'", () => {
+    assert.ok(!CONTENT_SECURITY_POLICY.includes('unsafe-inline'));
+    assert.ok(!CONTENT_SECURITY_POLICY.includes('unsafe-eval'));
+  });
+});
 
 describe('refuseCrossSiteWrites', () => {
   it('lets reads through regardless of headers', () => {

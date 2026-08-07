@@ -139,6 +139,13 @@ router.post('/sync', async (req, res) => {
   res.json({ ok: true, results: result.results });
 });
 
+// Liveness only — deliberately makes no external calls, so the container's
+// HEALTHCHECK can poll it as often as it likes without touching Plaid or Actual.
+// Use /status for whether those two are actually reachable.
+router.get('/health', (req, res) => {
+  res.json({ ok: true });
+});
+
 router.get('/status', async (req, res) => {
   const health = await checkExternalHealth();
   const status = {

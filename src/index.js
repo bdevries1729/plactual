@@ -2,14 +2,16 @@ import express from 'express';
 import path from 'node:path';
 import cron from 'node-cron';
 import routes from './routes.js';
-import { runSync } from './sync.js';
+import { runSync, isSyncRunning } from './sync.js';
+import { createShutdownHandler } from './shutdown.js';
 import { config, validateConfig } from './config.js';
 import { redact } from './redact.js';
-import { refuseCrossSiteWrites } from './middleware.js';
+import { refuseCrossSiteWrites, securityHeaders } from './middleware.js';
 
 await validateConfig();
 
 const app = express();
+app.use(securityHeaders);
 app.use(express.json());
 app.use(express.static(path.join(import.meta.dirname, '../public')));
 
@@ -38,14 +40,26 @@ app.use((err, req, res, _next) => {
   res.status(status).json({ ok: false, error: message });
 });
 
-app.listen(config.port, () => {
+const server = app.listen(config.port, () => {
   console.log(`\nplactual running at http://localhost:${config.port}`);
   console.log(`Plaid env : ${config.plaid.environment}`);
   console.log(`Actual URL: ${config.actual.serverUrl}`);
   console.log(`Schedule  : ${config.cronSchedule}\n`);
 });
 
-cron.schedule(config.cronSchedule, () => {
+const syncTask = cron.schedule(config.cronSchedule, () => {
   console.log(`\n[cron] Scheduled sync triggered (${new Date().toISOString()})`);
   runSync().catch((err) => console.error('[sync] Fatal error:', err));
 });
+
+// A sync writes to Actual and advances Plaid cursors, so being killed partway
+// through means redoing work. Give one in flight a chance to finish.
+const shutdown = createShutdownHandler({
+  server,
+  cronTask: syncTask,
+  isSyncRunning,
+  graceMs: config.shutdownGraceMs,
+});
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

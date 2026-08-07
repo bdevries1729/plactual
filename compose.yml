@@ -25,6 +25,11 @@ services:
       - plaid_client_id
       - plaid_secret
       - actual_password
+    # Docker's default is 10s, which is not long enough for a sync to finish, so
+    # a `docker compose stop` mid-sync would be a SIGKILL. Plactual waits up to
+    # SHUTDOWN_GRACE_MS (25s by default) for an in-flight sync; this leaves it
+    # room to do that and still exit on its own terms.
+    stop_grace_period: 30s
     volumes:
       # The container runs as uid 1000, so this directory must be writable by
       # it: `mkdir -p data/sync-files && sudo chown -R 1000:1000 data`. If you

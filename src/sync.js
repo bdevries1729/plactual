@@ -343,6 +343,12 @@ async function syncMapping(mapping, actualAccounts, plaidAccounts) {
 
 let syncRunning = false;
 
+// Read by the shutdown handler, which waits for an in-flight sync rather than
+// killing it partway.
+function isSyncRunning() {
+  return syncRunning;
+}
+
 async function runSync() {
   if (syncRunning) {
     console.log('Sync already in progress, skipping.');
@@ -401,4 +407,4 @@ async function runSync() {
   }
 }
 
-export { runSync };
+export { runSync, isSyncRunning };

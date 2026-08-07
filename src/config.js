@@ -16,6 +16,10 @@ const config = {
   debug: process.env.DEBUG?.toLowerCase() === 'true',
   cronSchedule: process.env.CRON_SCHEDULE || '0 */6 * * *',
   port: parseInt(process.env.PORT || '3131', 10),
+  // How long to let an in-flight sync finish after SIGTERM. Deliberately longer
+  // than Docker's default 10s stop timeout, which is too short for a sync to
+  // finish in; the shipped compose file raises stop_grace_period to match.
+  shutdownGraceMs: parseInt(process.env.SHUTDOWN_GRACE_MS || '25000', 10),
   dbFile: process.env.DB_FILE || '/data/sync-files/db.json',
   plaid: {
     environment: process.env.PLAID_ENV || 'sandbox',
@@ -72,6 +76,14 @@ function validateCronSchedule() {
 function validatePort() {
   if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
     fail(`Invalid PORT: "${process.env.PORT}". Must be an integer between 1 and 65535.`);
+  }
+}
+
+function validateShutdownGrace() {
+  if (!Number.isInteger(config.shutdownGraceMs) || config.shutdownGraceMs < 0) {
+    fail(
+      `Invalid SHUTDOWN_GRACE_MS: "${process.env.SHUTDOWN_GRACE_MS}". Must be a non-negative integer.`
+    );
   }
 }
 
@@ -134,6 +146,7 @@ async function validateConfig() {
 
   validateCronSchedule();
   validatePort();
+  validateShutdownGrace();
   validatePlaid();
   await validateActual();
 

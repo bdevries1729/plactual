@@ -55,6 +55,8 @@ services:
       - plaid_client_id
       - plaid_secret
       - actual_password
+    # Room for an in-flight sync to finish; Docker's default is only 10s.
+    stop_grace_period: 30s
     volumes:
       - ./data/sync-files:/data/sync-files
 
@@ -92,6 +94,7 @@ Visit `http://localhost:3131` in your browser to link your bank accounts.
 
 - `PORT` (optional) - Port for the web server. Default is `3131`. Validated at startup.
 - `CRON_SCHEDULE` (optional) - Cron expression for the background sync job. Default is `0 */6 * * *` (every 6 hours). Validated at startup.
+- `SHUTDOWN_GRACE_MS` (optional) - How long to let an in-flight sync finish after `SIGTERM` before exiting anyway. Default is `25000` (25 seconds). See [Shutdown](#shutdown).
 - `DEBUG` (optional) - Set to `true` for verbose logging. Default is `false`. Credentials are redacted from the logs even when this is on: request bodies and Plaid responses pass through `src/redact.js` first, so access tokens, public tokens, link tokens and passwords are masked.
 
 ### Plaid
@@ -155,6 +158,12 @@ treat reaching the port as equivalent to being logged in.
   writes must be `Content-Type: application/json` and carry a matching `Origin` when one is sent.
   A drive-by form post from another site can't trigger a sync or clear a reconnect flag. This is a
   CSRF guard, not access control — it does nothing about whoever can reach the port directly.
+- **A strict Content Security Policy** is sent with every response, along with `nosniff`,
+  `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY`. Scripts may only come from
+  `cdn.plaid.com`, styles from `fonts.googleapis.com`, fonts from `fonts.gstatic.com`, and the page
+  may not be framed. Note that the two third-party tags deliberately carry no Subresource Integrity
+  hash — both URLs are mutable by design, so a pinned hash would break the page on the vendor's next
+  deploy; see the comment in `public/index.html`.
 - **Credentials stay out of the logs**, including with `DEBUG=true` (see the `DEBUG` note above).
 - **The container runs as uid 1000**, not root, and the data it writes is `0600`/`0700`.
 - **If you script the API**, send `Content-Type: application/json` on every `POST`/`PATCH` — even
@@ -171,6 +180,24 @@ If a credential ever does get committed, **revoke it first**; scrubbing the hist
 and, on a repo that has been pushed, incomplete. A Plaid access token is revoked with
 [`/item/remove`](https://plaid.com/docs/api/items/#itemremove), which leaves it returning
 `ITEM_NOT_FOUND`.
+
+### Shutdown
+
+On `SIGTERM` or `SIGINT`, Plactual stops scheduling syncs, stops accepting connections, and then
+waits up to `SHUTDOWN_GRACE_MS` for a sync already in progress to finish before exiting. A second
+signal exits immediately.
+
+Nothing is corrupted if it does get killed partway — `db.json` is written atomically, and a sync
+that doesn't complete leaves its cursor untouched, so the next run re-fetches the same diff and the
+imports are idempotent. The wait just avoids the wasted work.
+
+Docker's default stop timeout is 10 seconds, which is shorter than a sync often takes, so the
+example `compose.yml` sets `stop_grace_period: 30s` to leave room for the default grace period. With
+plain `docker run`, pass `docker stop -t 30`.
+
+The container also declares a `HEALTHCHECK` against `/api/health`, which is a liveness check only —
+it makes no external calls, so an unreachable Plaid or Actual server won't get the container
+restarted. Use `/api/status` to see whether those two are actually up.
 
 ## How It Works
 
@@ -190,17 +217,18 @@ Errors are returned as `{ "ok": false, "error": "..." }` with an appropriate sta
 `POST` and `PATCH` must be sent as `Content-Type: application/json`, including the ones with no
 body — see [Security](#security).
 
-| Method  | Endpoint                               | Description                                                     |
-| ------- | -------------------------------------- | --------------------------------------------------------------- |
-| `GET`   | `/api/status`                          | Item count, cron schedule, Plaid env, and Plaid/Actual health.  |
-| `GET`   | `/api/mappings`                        | List all account mappings.                                      |
-| `PATCH` | `/api/mappings/:plaid_account_id/sync` | Enable or disable syncing for one account (`{ "sync": true }`). |
-| `POST`  | `/api/mappings/refresh`                | Re-check linked institutions for new accounts.                  |
-| `POST`  | `/api/mappings/:item_id/resolve_login` | Clear the `login_required` flag after a successful reconnect.   |
-| `POST`  | `/api/create_link_token`               | Create a Plaid Link token for linking a new institution.        |
-| `POST`  | `/api/create_link_token_update`        | Create a Link token in update mode (`{ "item_id": "..." }`).    |
-| `POST`  | `/api/exchange_public_token`           | Exchange a Plaid public token and create account mappings.      |
-| `POST`  | `/api/sync`                            | Trigger a sync immediately (`409` if one is already running).   |
+| Method  | Endpoint                               | Description                                                           |
+| ------- | -------------------------------------- | --------------------------------------------------------------------- |
+| `GET`   | `/api/health`                          | Liveness only. No external calls; used by the container health check. |
+| `GET`   | `/api/status`                          | Item count, cron schedule, Plaid env, and Plaid/Actual health.        |
+| `GET`   | `/api/mappings`                        | List all account mappings.                                            |
+| `PATCH` | `/api/mappings/:plaid_account_id/sync` | Enable or disable syncing for one account (`{ "sync": true }`).       |
+| `POST`  | `/api/mappings/refresh`                | Re-check linked institutions for new accounts.                        |
+| `POST`  | `/api/mappings/:item_id/resolve_login` | Clear the `login_required` flag after a successful reconnect.         |
+| `POST`  | `/api/create_link_token`               | Create a Plaid Link token for linking a new institution.              |
+| `POST`  | `/api/create_link_token_update`        | Create a Link token in update mode (`{ "item_id": "..." }`).          |
+| `POST`  | `/api/exchange_public_token`           | Exchange a Plaid public token and create account mappings.            |
+| `POST`  | `/api/sync`                            | Trigger a sync immediately (`409` if one is already running).         |
 
 ## Local Development
 
@@ -249,8 +277,9 @@ sync without waiting on a real bank:
 | ------------------- | ---------------------------------------------------------- |
 | `src/index.js`      | Express app, middleware, cron scheduler, entry point.      |
 | `src/config.js`     | Environment/secret loading and startup validation.         |
-| `src/middleware.js` | Refuses cross-site writes (CSRF guard).                    |
+| `src/middleware.js` | Security headers and the cross-site write guard.           |
 | `src/redact.js`     | Masks credentials in anything that gets logged.            |
+| `src/shutdown.js`   | Signal handling: finish an in-flight sync, then exit.      |
 | `src/routes.js`     | The `/api` routes.                                         |
 | `src/sync.js`       | Plaid → Actual transaction sync.                           |
 | `src/accounts.js`   | Creating and reconciling Plaid ↔ Actual account mappings.  |
