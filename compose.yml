@@ -8,11 +8,19 @@ services:
       - NODE_ENV=production
       - CRON_SCHEDULE=0 */6 * * *
       - PLAID_ENV=sandbox
-      - PLAID_CLIENT_ID=your_plaid_client_id
-      - PLAID_SECRET=your_plaid_secret
       - ACTUAL_SERVER_URL=http://actualbudget:5006
-      - ACTUAL_PASSWORD=your_actual_password
       - ACTUAL_BUDGET_ID=your_actual_budget_id
+      # Sensitive values are read from files instead of the environment.
+      # For any of PLAID_CLIENT_ID, PLAID_SECRET and ACTUAL_PASSWORD you can set
+      # <NAME>_FILE to a file path; it takes precedence over the plain <NAME>
+      # variable, which is still supported if you'd rather not use secrets.
+      - PLAID_CLIENT_ID_FILE=/run/secrets/plaid_client_id
+      - PLAID_SECRET_FILE=/run/secrets/plaid_secret
+      - ACTUAL_PASSWORD_FILE=/run/secrets/actual_password
+    secrets:
+      - plaid_client_id
+      - plaid_secret
+      - actual_password
     volumes:
       - ./data/sync-files:/data/sync-files
 
@@ -23,3 +31,13 @@ services:
   #     - "5006:5006"
   #   volumes:
   #     - ./actual-data:/data
+
+# Each file should contain only the secret value. A trailing newline is fine —
+# it gets trimmed when the file is read.
+secrets:
+  plaid_client_id:
+    file: ./secrets/plaid_client_id
+  plaid_secret:
+    file: ./secrets/plaid_secret
+  actual_password:
+    file: ./secrets/actual_password

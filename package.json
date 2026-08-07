@@ -1,8 +1,8 @@
 {
   "name": "plactual",
-  "version": "1.0.0",
+  "version": "0.1.2",
   "description": "Sync Actual Budget server with banks via Plaid.",
-  "license": "ISC",
+  "license": "MIT",
   "author": "Ben DeVries",
   "type": "module",
   "main": "index.js",

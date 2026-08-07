@@ -1,8 +1,5 @@
 # TODO
 
-- update the README.md
-
-
 ## Notes:
 
 - [bypass link](https://plaid.com/docs/api/sandbox/#sandboxpublic_tokencreate) in sandbox
