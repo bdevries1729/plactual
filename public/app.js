@@ -19,7 +19,10 @@ const lastSeen = { server: null, plaid: null, actual: null };
 async function api(path, { method = 'GET', body } = {}) {
   const response = await fetch(`/api${path}`, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    // Sent on every write, even the body-less ones: the server refuses writes
+    // that aren't declared as JSON, which is what keeps a cross-site form from
+    // reaching this API.
+    headers: method === 'GET' ? undefined : { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
 

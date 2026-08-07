@@ -1,0 +1,28 @@
+version: 2
+
+updates:
+  # npm. Minor and patch bumps are grouped into one PR to keep the noise down;
+  # majors arrive separately because they need reading. Security updates are not
+  # grouped by this config — they come through on their own, immediately.
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        applies-to: version-updates
+        update-types: ['minor', 'patch']
+
+  # Keeps the SHA-pinned actions in .github/workflows current — pinning without
+  # this just means silently running stale actions forever.
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+
+  # The `node:24-alpine` base image in the Dockerfile.
+  - package-ecosystem: 'docker'
+    directory: '/'
+    schedule:
+      interval: 'weekly'

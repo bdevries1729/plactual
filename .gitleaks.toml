@@ -1,0 +1,56 @@
+title = "Plactual secret scanning"
+
+# Gitleaks' built-in rules (AWS keys, private keys, GitHub tokens, …) plus the
+# credentials specific to this project. The defaults alone do NOT match Plaid
+# tokens, so without the rules below a scan of this repo comes back clean even
+# when an access token is committed — which is exactly what happened once.
+[extend]
+useDefault = true
+
+# The credential for a linked bank account. Long-lived, and the single most
+# sensitive string this project handles.
+[[rules]]
+id = "plaid-access-token"
+description = "Plaid access token"
+regex = '''access-(?:sandbox|development|production)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'''
+tags = ["plaid", "credential"]
+
+# Short-lived, but still never belongs in the repo.
+[[rules]]
+id = "plaid-link-or-public-token"
+description = "Plaid link or public token"
+regex = '''(?:link|public)-(?:sandbox|development|production)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'''
+tags = ["plaid", "credential"]
+
+# Catches a real value pasted where the docs expect a placeholder — the Plaid
+# client id and secret and the Actual password have no distinctive shape of
+# their own, so they're matched by the name they're assigned to.
+[[rules]]
+id = "plactual-credential-assignment"
+description = "Plactual credential assigned a literal value"
+regex = '''(?i)\b(?:PLAID_CLIENT_ID|PLAID_SECRET|ACTUAL_PASSWORD)\s*[:=]\s*['"]?[A-Za-z0-9/+_-]{8,}'''
+tags = ["credential"]
+
+  # The documented placeholders, which appear in README.md and compose.yml.
+  [[rules.allowlists]]
+  regexTarget = "match"
+  regexes = [
+    '''your_[a-z_]+''',
+    '''(?i)(?:changeme|placeholder|example|redacted|xxx+|\*\*\*)''',
+    '''\$\{[^}]+\}''',
+  ]
+
+[[allowlists]]
+description = """
+Two sandbox access tokens committed in 2026 (a hardcoded value in src/routes.js
+and a test.mappings.json fixture, both since deleted). Both were revoked via
+Plaid's /item/remove and now return ITEM_NOT_FOUND, so the strings are inert.
+History was deliberately left unrewritten — these entries keep a full-history
+scan from failing forever on credentials that no longer exist. Do not add live
+tokens here; revoke them instead.
+"""
+regexTarget = "match"
+regexes = [
+  '''access-sandbox-a9f17270-759d-42c9-965c-793035eae015''',
+  '''access-sandbox-dbe878d1-3c8a-4341-9252-180c775cedc4''',
+]

@@ -79,6 +79,20 @@ describe('plaidToActualTransaction', () => {
     assert.equal(plaidToActualTransaction('acct', { ...base, amount: -50 }).amount, 5000);
   });
 
+  it('keeps a zero amount at a signed-zero-free zero', () => {
+    const tx = plaidToActualTransaction('acct', { ...base, amount: 0 });
+    assert.equal(tx.amount, 0);
+    assert.equal(Object.is(tx.amount, -0), false);
+  });
+
+  it('leaves a missing amount as null rather than booking $0.00', () => {
+    // -0 would survive JSON.stringify as a plain 0 and import as a real
+    // zero-amount transaction; sync.js drops null-amount rows instead.
+    for (const amount of [null, undefined]) {
+      assert.equal(plaidToActualTransaction('acct', { ...base, amount }).amount, null);
+    }
+  });
+
   it('prefers the merchant name and keeps the raw name as notes', () => {
     const tx = plaidToActualTransaction('acct', base);
     assert.equal(tx.payee_name, 'Starbucks');

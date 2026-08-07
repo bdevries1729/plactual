@@ -3,7 +3,11 @@ services:
     image: ghcr.io/bdevries1729/plactual:latest
     container_name: plactual
     ports:
-      - '3131:3131'
+      # Bound to localhost: Plactual has no login of its own, and anyone who can
+      # reach this port can link banks and read your account list. To reach it
+      # from another machine, put an authenticating reverse proxy in front and
+      # point it here — don't publish this on 0.0.0.0.
+      - '127.0.0.1:3131:3131'
     environment:
       - NODE_ENV=production
       - CRON_SCHEDULE=0 */6 * * *
@@ -21,7 +25,15 @@ services:
       - plaid_client_id
       - plaid_secret
       - actual_password
+    # Docker's default is 10s, which is not long enough for a sync to finish, so
+    # a `docker compose stop` mid-sync would be a SIGKILL. Plactual waits up to
+    # SHUTDOWN_GRACE_MS (25s by default) for an in-flight sync; this leaves it
+    # room to do that and still exit on its own terms.
+    stop_grace_period: 30s
     volumes:
+      # The container runs as uid 1000, so this directory must be writable by
+      # it: `mkdir -p data/sync-files && sudo chown -R 1000:1000 data`. If you
+      # already ran an older Plactual as root, chown the existing files too.
       - ./data/sync-files:/data/sync-files
 
   # You can optionally include your actualbudget server here if you want them on the same network
