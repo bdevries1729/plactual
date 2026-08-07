@@ -4,6 +4,7 @@ import plaid from './plaid.js';
 import db from './db.js';
 import { plaidToActualTransaction, toActualAmount } from './helpers.js';
 import { ensureAllAccountMappings } from './accounts.js';
+import { connectActual } from './actual.js';
 import { config } from './config.js';
 
 // Fetch new transactions for an account. Pass initialCursor=null to fetch all transactions.
@@ -267,12 +268,9 @@ async function runSync() {
     }
 
     console.log(`Syncing ${mappingList.length} mappings`);
-    await api.init({
-      verbose: config.debug,
-      dataDir: config.actual.dataDir,
-      serverURL: config.actual.serverUrl,
-      password: config.actual.password,
-    });
+    // Reuses the session opened at startup; only signs in if we aren't connected
+    // yet. Re-logging in here would count against the server's login rate limit.
+    await connectActual();
     await api.downloadBudget(config.actual.budgetId);
 
     const actualAccounts = await api.getAccounts();
@@ -332,7 +330,9 @@ async function runSync() {
       }
     }
 
-    await api.shutdown();
+    // We keep the connection open between runs, so push our changes to the
+    // server explicitly — api.shutdown() used to do this on the way out.
+    await api.sync();
     console.log('=== Sync complete ===\n');
   } finally {
     syncRunning = false;

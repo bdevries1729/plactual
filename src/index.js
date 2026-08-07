@@ -4,8 +4,10 @@ import cron from 'node-cron';
 import routes from './routes.js';
 import { runSync } from './sync.js';
 import { config, validateConfig } from './config.js';
+import { disconnectActual, validateActual } from './actual.js';
 
-await validateConfig();
+validateConfig();
+await validateActual();
 
 const app = express();
 app.use(express.json());
@@ -44,3 +46,17 @@ cron.schedule(config.cronSchedule, () => {
   runSync().catch((err) => console.error('[sync] Fatal error:', err));
 });
 console.log(`[cron] Scheduler active: "${config.cronSchedule}"`);
+
+// The Actual connection lives as long as the process, so close the budget on the
+// way out to flush anything still pending to the server.
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, async () => {
+    console.log(`\nReceived ${signal}, shutting down...`);
+    try {
+      await disconnectActual();
+    } catch (err) {
+      console.error('Error closing Actual connection:', err.message);
+    }
+    process.exit(0);
+  });
+}
