@@ -1,5 +1,14 @@
 import cron from 'node-cron';
 import api from '@actual-app/api';
+import fs from 'fs';
+
+function getSecret(name) {
+  const path = process.env[`${name}_FILE`];
+  if (path && fs.existsSync(path)) {
+    return fs.readFileSync(path, "utf8").trim();
+  }
+  return process.env[name];
+}
 
 const config = {
   debug:
@@ -9,13 +18,13 @@ const config = {
   dbFile: process.env.DB_FILE || '/data/sync-files/db.json',
   plaid: {
     environment: process.env.PLAID_ENV || 'sandbox',
-    clientId: process.env.PLAID_CLIENT_ID,
-    secret: process.env.PLAID_SECRET,
+    clientId: getSecret('PLAID_CLIENT_ID'),
+    secret: getSecret('PLAID_SECRET'),
   },
   actual: {
     dataDir: process.env.ACTUAL_DATA_DIR || '/data/actual-cache',
     serverUrl: process.env.ACTUAL_SERVER_URL || 'http://actualbudget:5006',
-    password: process.env.ACTUAL_PASSWORD,
+    password: getSecret('ACTUAL_PASSWORD'),
     budgetId: process.env.ACTUAL_BUDGET_ID,
   },
 };
