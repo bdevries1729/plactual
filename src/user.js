@@ -2,7 +2,7 @@ import plaid from './plaid.js';
 import db from './db.js';
 import { config } from './config.js';
 
-async function generatePlaidUserId() {
+async function createPlaidUser() {
   const clientUser = crypto.randomUUID();
   if (config.debug) console.log('Creating plaid user. Will use client_user_id: ', clientUser);
   const response = await plaid.userCreate({ client_user_id: clientUser });
@@ -14,6 +14,25 @@ async function generatePlaidUserId() {
   return plaidUserId;
 }
 
+// Shared between concurrent callers. Two browser tabs both booting the UI each
+// ask for a link token, and without this they would each create a Plaid user
+// and the second would overwrite users[0]. Items linked under the lost user
+// disappear from getUserItems(), which silently stops account discovery for
+// them — masked by the fact that their existing mappings keep syncing off the
+// access token they already hold.
+let creating = null;
+
+async function getOrCreatePlaidUserId() {
+  const existing = db.data.users[0]?.plaid_user_id;
+  if (existing) return existing;
+
+  // Cleared on both paths so a failed attempt doesn't poison later ones.
+  creating ??= createPlaidUser().finally(() => {
+    creating = null;
+  });
+  return creating;
+}
+
 async function getUserItems() {
   if (db.data.users.length === 0) {
     return [];
@@ -23,4 +42,4 @@ async function getUserItems() {
   return response.data.items;
 }
 
-export { generatePlaidUserId, getUserItems };
+export { getOrCreatePlaidUserId, getUserItems };

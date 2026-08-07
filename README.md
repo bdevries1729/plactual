@@ -40,7 +40,8 @@ services:
     image: ghcr.io/bdevries1729/plactual:latest
     container_name: plactual
     ports:
-      - '3131:3131'
+      # Localhost only — Plactual has no authentication of its own.
+      - '127.0.0.1:3131:3131'
     environment:
       - NODE_ENV=production
       - CRON_SCHEDULE=0 */6 * * *
@@ -66,6 +67,14 @@ secrets:
     file: ./secrets/actual_password
 ```
 
+Create the data directory. The container runs as an unprivileged user (uid 1000), so the
+directory has to be writable by it:
+
+```bash
+mkdir -p data/sync-files
+sudo chown -R 1000:1000 data
+```
+
 Start the service:
 
 ```bash
@@ -74,13 +83,16 @@ docker compose up -d
 
 Visit `http://localhost:3131` in your browser to link your bank accounts.
 
+> **Keep the port private.** Plactual has no login of its own — see
+> [Security](#security) before making it reachable from anywhere but the machine it runs on.
+
 ## Configuration (Environment Variables)
 
 ### General
 
-- `PORT` (optional) - Port for the web server. Default is `3131`.
+- `PORT` (optional) - Port for the web server. Default is `3131`. Validated at startup.
 - `CRON_SCHEDULE` (optional) - Cron expression for the background sync job. Default is `0 */6 * * *` (every 6 hours). Validated at startup.
-- `DEBUG` (optional) - Set to `true` for verbose logging. Default is `false`. Credentials are redacted from the logs even when this is on.
+- `DEBUG` (optional) - Set to `true` for verbose logging. Default is `false`. Credentials are redacted from the logs even when this is on: request bodies and Plaid responses pass through `src/redact.js` first, so access tokens, public tokens, link tokens and passwords are masked.
 
 ### Plaid
 
@@ -115,11 +127,38 @@ If `<NAME>_FILE` is set and the file exists, it wins over the plain `<NAME>` var
 
 `db.json` holds your account mappings, sync cursors, and the Plaid access tokens for your linked institutions. Keep the volume it lives on persistent (otherwise you'll have to re-link your banks) and treat its contents as sensitive.
 
+Because of those tokens, Plactual writes everything under `DB_FILE` and `ACTUAL_DATA_DIR` with a
+restrictive umask: files are created `0600` and directories `0700`, owned by the user the process
+runs as (uid 1000 in the container). If you're upgrading from a version that ran as root, fix the
+existing files up once:
+
+```bash
+sudo chown -R 1000:1000 data && sudo chmod 600 data/sync-files/db.json
+```
+
 The Actual Budget cache in `ACTUAL_DATA_DIR` is disposable — it's re-downloaded from your Actual server as needed — so it doesn't need a volume.
 
 ### Startup validation
 
-On startup Plactual validates the cron expression, the Plaid environment and credentials, and connects to Actual Budget to confirm that `ACTUAL_BUDGET_ID` matches an existing budget. If any check fails, it logs the reason and exits.
+On startup Plactual validates the cron expression and the port, checks that the Plaid environment and credentials are present, and connects to Actual Budget to confirm that `ACTUAL_BUDGET_ID` is set and matches an existing budget. If any check fails, it logs the reason and exits.
+
+## Security
+
+Plactual holds the keys to your bank data: `db.json` contains a Plaid access token per linked
+institution, and the API can mint Plaid Link tokens. It has **no authentication of its own**, so
+treat reaching the port as equivalent to being logged in.
+
+- **Keep the port private.** The example `compose.yml` publishes on `127.0.0.1` for this reason.
+  To reach Plactual from another machine, put a reverse proxy that authenticates in front of it
+  (Authelia, Tailscale, basic auth — whatever you already run) rather than publishing the port.
+- **Cross-site requests are refused.** Because a browser can reach a localhost port from any page,
+  writes must be `Content-Type: application/json` and carry a matching `Origin` when one is sent.
+  A drive-by form post from another site can't trigger a sync or clear a reconnect flag. This is a
+  CSRF guard, not access control — it does nothing about whoever can reach the port directly.
+- **Credentials stay out of the logs**, including with `DEBUG=true` (see the `DEBUG` note above).
+- **The container runs as uid 1000**, not root, and the data it writes is `0600`/`0700`.
+- **If you script the API**, send `Content-Type: application/json` on every `POST`/`PATCH` — even
+  the ones that take no body, or you'll get a `415`.
 
 ## How It Works
 
@@ -135,7 +174,9 @@ If an institution needs you to log in again, Plaid returns `ITEM_LOGIN_REQUIRED`
 
 The web UI is built on a small JSON API under `/api`. Access tokens are never returned in any response.
 
-Errors are returned as `{ "ok": false, "error": "..." }` with an appropriate status code.
+Errors are returned as `{ "ok": false, "error": "..." }` with an appropriate status code. Every
+`POST` and `PATCH` must be sent as `Content-Type: application/json`, including the ones with no
+body — see [Security](#security).
 
 | Method  | Endpoint                               | Description                                                     |
 | ------- | -------------------------------------- | --------------------------------------------------------------- |
@@ -196,6 +237,8 @@ sync without waiting on a real bank:
 | ------------------- | ---------------------------------------------------------- |
 | `src/index.js`      | Express app, middleware, cron scheduler, entry point.      |
 | `src/config.js`     | Environment/secret loading and startup validation.         |
+| `src/middleware.js` | Refuses cross-site writes (CSRF guard).                    |
+| `src/redact.js`     | Masks credentials in anything that gets logged.            |
 | `src/routes.js`     | The `/api` routes.                                         |
 | `src/sync.js`       | Plaid → Actual transaction sync.                           |
 | `src/accounts.js`   | Creating and reconciling Plaid ↔ Actual account mappings.  |

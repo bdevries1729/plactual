@@ -4,6 +4,8 @@ import cron from 'node-cron';
 import routes from './routes.js';
 import { runSync } from './sync.js';
 import { config, validateConfig } from './config.js';
+import { redact } from './redact.js';
+import { refuseCrossSiteWrites } from './middleware.js';
 
 await validateConfig();
 
@@ -15,13 +17,14 @@ app.use((req, res, next) => {
   if (config.debug) {
     console.log(`\n${req.method} ${req.originalUrl}`);
     if (Object.keys(req.body || {}).length > 0) {
-      console.log('Request body: ', req.body);
+      // Redacted: /exchange_public_token posts a Plaid public_token.
+      console.log('Request body: ', redact(req.body));
     }
   }
   next();
 });
 
-app.use('/api', routes);
+app.use('/api', refuseCrossSiteWrites, routes);
 
 // Express 5 forwards rejections from async handlers here, so routes throw
 // rather than formatting their own error responses.
@@ -30,7 +33,7 @@ app.use((err, req, res, _next) => {
   const message = err.response?.data?.error_message || err.message || 'Internal Server Error';
   console.error(
     `${req.method} ${req.originalUrl} -> ${status}:`,
-    err.response?.data || err.message
+    err.response?.data ? redact(err.response.data) : err.message
   );
   res.status(status).json({ ok: false, error: message });
 });

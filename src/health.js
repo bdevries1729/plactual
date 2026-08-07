@@ -6,24 +6,45 @@ const PROBE_TIMEOUT_MS = 5_000;
 
 const cachedHealth = { plaid: 'unknown', actual: 'unknown', lastCheck: 0 };
 
-export async function checkExternalHealth() {
-  const now = Date.now();
-  if (now - cachedHealth.lastCheck < CACHE_TTL_MS) return cachedHealth;
-
+async function probePlaid() {
   try {
-    await plaid.categoriesGet({});
-    cachedHealth.plaid = 'up';
+    // The timeout matters as much as the call: without it a hung connection
+    // holds /api/status open indefinitely, and the UI adds another poll every
+    // few seconds.
+    await plaid.categoriesGet({}, { timeout: PROBE_TIMEOUT_MS });
+    return 'up';
   } catch {
-    cachedHealth.plaid = 'down';
+    return 'down';
   }
+}
 
+async function probeActual() {
   try {
     await fetch(config.actual.serverUrl, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
-    cachedHealth.actual = 'up';
+    return 'up';
   } catch {
-    cachedHealth.actual = 'down';
+    return 'down';
   }
+}
 
-  cachedHealth.lastCheck = now;
+async function probe() {
+  const [plaidState, actualState] = await Promise.all([probePlaid(), probeActual()]);
+  cachedHealth.plaid = plaidState;
+  cachedHealth.actual = actualState;
+  cachedHealth.lastCheck = Date.now();
   return cachedHealth;
+}
+
+// Shared by everyone who asks while a probe is running. lastCheck is only
+// written once both probes settle, so without this the UI's polling would start
+// a fresh pair of requests every few seconds for as long as one hangs.
+let inFlight = null;
+
+export async function checkExternalHealth() {
+  if (Date.now() - cachedHealth.lastCheck < CACHE_TTL_MS) return cachedHealth;
+
+  inFlight ??= probe().finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
 }

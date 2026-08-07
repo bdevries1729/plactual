@@ -1,6 +1,6 @@
 {
   "name": "plactual",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Sync Actual Budget server with banks via Plaid.",
   "license": "MIT",
   "author": "Ben DeVries",

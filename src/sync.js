@@ -67,8 +67,15 @@ async function fetchPlaidTransactions(accountId, accessToken, initialCursor) {
         changes.added.push(...data.added);
         changes.modified.push(...data.modified);
         changes.removed.push(...data.removed);
-        changes.nextCursor = data.next_cursor || null;
+        // Only advance on a real cursor. A null cursor means "fetch all
+        // history" downstream, so overwriting with an empty one would silently
+        // restart the account from scratch on the next run.
+        if (data.next_cursor) changes.nextCursor = data.next_cursor;
         hasMore = data.has_more;
+        // Paging on an unchanged cursor would loop forever against Plaid.
+        if (hasMore && !data.next_cursor) {
+          throw new Error(`Plaid reported more pages but returned no cursor for ${accountId}`);
+        }
       } while (hasMore);
       return changes;
     } catch (error) {
@@ -163,10 +170,19 @@ async function applyModifications(actualAccountId, modified) {
 async function adjustStartingBalance(mapping, plaidAccount) {
   const { actual_account_id: actualAccountId, account_name: accountName } = mapping;
 
-  // `balances.current` can be null; skip the adjustment rather than doing
-  // arithmetic on it and booking a NaN transaction.
+  // `balances.current` can be null, and plaidAccount itself is missing whenever
+  // the item wasn't reconciled this run (a login-required item contributes no
+  // accounts). Either way there's nothing to line the balance up against, so
+  // skip rather than doing arithmetic on it and booking a NaN transaction —
+  // loudly, because the account is left not matching the bank.
   const plaidCurrent = plaidAccount?.balances?.current;
-  if (plaidCurrent == null) return 0;
+  if (plaidCurrent == null) {
+    console.error(
+      `  ! No Plaid balance available for "${accountName}"; skipped the starting-balance ` +
+        `adjustment, so its Actual balance will not match the bank until you correct it.`
+    );
+    return 0;
+  }
 
   // Plaid reports credit and loan balances as a positive amount owed; Actual
   // expects those as a negative balance.
@@ -209,6 +225,27 @@ async function syncAccount(mapping, isNewAccount, plaidAccounts) {
 
   const summary = { added: 0, removed: 0, modified: 0, error: null };
   const changes = await fetchPlaidTransactions(plaidAccountId, accessToken, cursor);
+
+  // The fetch succeeding proves the login works, which is worth recording even
+  // when the reconnect happened outside the UI — the UI's resolve_login call is
+  // otherwise the only thing that ever clears this.
+  if (mapping.login_required) {
+    await setMappingFields(plaidAccountId, { login_required: false });
+  }
+
+  // Plaid always sends an amount, but a missing one cannot be converted to
+  // Actual's integer cents and would import as $0.00. Drop those rows without
+  // counting them as failures: a failure holds the cursor back, and an amount
+  // that never arrives would stall the account on the same rows forever.
+  const unusable = [...changes.added, ...changes.modified].filter((tx) => tx.amount == null);
+  if (unusable.length > 0) {
+    console.error(
+      `  ! Skipped ${unusable.length} Plaid transaction(s) with no amount for "${accountName}":`,
+      unusable.map((tx) => tx.transaction_id)
+    );
+    changes.added = changes.added.filter((tx) => tx.amount != null);
+    changes.modified = changes.modified.filter((tx) => tx.amount != null);
+  }
 
   if (isNewAccount) {
     const cutoff = toDateString(firstOfMonth());

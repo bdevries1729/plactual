@@ -5,8 +5,9 @@ import db from './db.js';
 import { runSync } from './sync.js';
 import { config } from './config.js';
 import { createAccountMappings, ensureAllAccountMappings } from './accounts.js';
-import { generatePlaidUserId } from './user.js';
+import { getOrCreatePlaidUserId } from './user.js';
 import { checkExternalHealth } from './health.js';
+import { redact } from './redact.js';
 
 const router = express.Router();
 
@@ -36,7 +37,7 @@ async function updateMappings(matches, apply) {
 // `overrides` carries what differs between linking a new institution
 // (`products`) and re-authenticating an existing one (`access_token`).
 async function createLinkToken(overrides) {
-  const plaidUserId = db.data.users[0]?.plaid_user_id || (await generatePlaidUserId());
+  const plaidUserId = await getOrCreatePlaidUserId();
   if (config.debug) console.log(`Plaid user_id: ${plaidUserId}`);
 
   const response = await plaid.linkTokenCreate({
@@ -46,7 +47,7 @@ async function createLinkToken(overrides) {
     language: 'en',
     ...overrides,
   });
-  if (config.debug) console.log('Link token create response data:\n', response.data, '\n');
+  if (config.debug) console.log('Link token create response data:\n', redact(response.data), '\n');
   return response.data.link_token;
 }
 
@@ -121,7 +122,8 @@ router.post('/exchange_public_token', async (req, res) => {
   if (!publicToken) throw httpError(400, 'public_token required');
 
   const exchangeRes = await plaid.itemPublicTokenExchange({ public_token: publicToken });
-  if (config.debug) console.log('Token exchange response data:\n', exchangeRes.data);
+  // Redacted: this response carries the access_token for the linked bank.
+  if (config.debug) console.log('Token exchange response data:\n', redact(exchangeRes.data));
   const { access_token: accessToken, item_id: itemId } = exchangeRes.data;
 
   const savedMappings = await createAccountMappings(accessToken);

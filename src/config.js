@@ -37,6 +37,13 @@ function fail(message) {
   process.exit(1);
 }
 
+// db.json holds the Plaid access tokens for every linked bank, and lowdb writes
+// it with whatever the default mode allows (0644 — world-readable, and on a
+// bind mount that means readable by every user on the host). Set this before
+// ensureDataDirs() below so everything this process creates is private to its
+// own user: 0600 for files, 0700 for directories.
+process.umask(0o077);
+
 // Must run before anything else loads: lowdb silently falls back to in-memory
 // defaults and then throws ENOENT on every write, and Actual's mkdir is not
 // recursive, so downloadBudget fails if the cache dir is missing. Called at
@@ -60,6 +67,14 @@ function validateCronSchedule() {
   }
 }
 
+// parseInt yields NaN for anything non-numeric, and app.listen(NaN) quietly
+// binds a random free port instead of failing.
+function validatePort() {
+  if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
+    fail(`Invalid PORT: "${process.env.PORT}". Must be an integer between 1 and 65535.`);
+  }
+}
+
 function validatePlaid() {
   const { environment, clientId, secret } = config.plaid;
   if (environment !== 'sandbox' && environment !== 'production') {
@@ -71,6 +86,11 @@ function validatePlaid() {
 
 async function validateActual() {
   if (!config.actual.password) fail('ACTUAL_PASSWORD is not configured.');
+  // Checked for presence separately from the match below: a local, non-synced
+  // budget has no groupId at all, so an unset ACTUAL_BUDGET_ID would satisfy
+  // `b.groupId === undefined` and pass validation, only to fail later inside
+  // downloadBudget() halfway through a sync.
+  if (!config.actual.budgetId) fail('ACTUAL_BUDGET_ID is not configured.');
 
   try {
     await api.init({
@@ -113,10 +133,11 @@ async function validateConfig() {
   if (config.debug) console.log('\nServer Configuration:\n', redactedConfig());
 
   validateCronSchedule();
+  validatePort();
   validatePlaid();
   await validateActual();
 
   if (config.debug) console.log('Configuration validated.\n');
 }
 
-export { config, validateConfig, ensureDataDirs };
+export { config, validateConfig, ensureDataDirs, fail };

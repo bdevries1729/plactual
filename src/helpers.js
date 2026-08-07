@@ -26,10 +26,18 @@ function addDays(date, days) {
 
 function plaidToActualTransaction(actualAccountId, tx) {
   const payee = tx.merchant_name || tx.name || 'Unknown';
+  // Plaid reports spending as positive, Actual as negative. Negating straight
+  // through would turn toActualAmount's null into -0, which serializes to a
+  // real 0 and books a $0.00 transaction; callers drop null-amount rows instead
+  // (see sync.js), so the null is kept intact for them to see. A genuine 0 is
+  // pinned to +0 for the same reason in reverse — nothing downstream should
+  // have to reason about signed zero.
+  const cents = toActualAmount(tx.amount);
+  const amount = cents == null ? null : cents === 0 ? 0 : -cents;
   return {
     account: actualAccountId,
     date: tx.date,
-    amount: -toActualAmount(tx.amount),
+    amount,
     payee_name: payee, // accepted on create only, not on update
     imported_payee: payee,
     notes: tx.merchant_name && tx.name && tx.name !== tx.merchant_name ? tx.name : undefined,
