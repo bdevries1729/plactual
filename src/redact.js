@@ -4,10 +4,16 @@
 //
 // `access_token` is the important one: it is the long-lived credential for a
 // linked bank, and it appears in the token exchange response.
+//
+// `user_token` is not one this app can produce — /user/create only returns it
+// for integrations predating the user_id API, and this one passes user_id
+// everywhere — but the whole point of the set is that nothing has to be
+// re-audited when a response shape changes.
 const SECRET_KEYS = new Set([
   'access_token',
   'public_token',
   'link_token',
+  'user_token',
   'client_id',
   'secret',
   'password',

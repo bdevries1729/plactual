@@ -6,12 +6,12 @@ import { runSync, isSyncRunning } from './sync.js';
 import { createShutdownHandler } from './shutdown.js';
 import { config, validateConfig } from './config.js';
 import { redact } from './redact.js';
-import { refuseCrossSiteWrites, securityHeaders } from './middleware.js';
+import { refuseCrossSiteWrites, createSecurityHeaders } from './middleware.js';
 
 await validateConfig();
 
 const app = express();
-app.use(securityHeaders);
+app.use(createSecurityHeaders(config.plaid.environment));
 app.use(express.json());
 app.use(express.static(path.join(import.meta.dirname, '../public')));
 

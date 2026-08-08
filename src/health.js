@@ -20,8 +20,13 @@ async function probePlaid() {
 
 async function probeActual() {
   try {
-    await fetch(config.actual.serverUrl, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
-    return 'up';
+    const response = await fetch(config.actual.serverUrl, {
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+    // fetch only rejects on a transport failure, so the status has to be looked
+    // at too: a 4xx still proves something is answering on that URL, but a 5xx
+    // is a server that cannot serve, which is what "down" means here.
+    return response.status < 500 ? 'up' : 'down';
   } catch {
     return 'down';
   }

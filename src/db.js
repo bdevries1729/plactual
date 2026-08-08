@@ -10,6 +10,12 @@ import { config, fail } from './config.js';
 //   cursor                             (Plaid transactionsSync cursor, null = fetch all)
 //   sync                               (user toggle)
 //   login_required                     (set when Plaid returns ITEM_LOGIN_REQUIRED)
+//   starting_balance_date              (set to the account's creation date while the
+//                                       starting-balance adjustment is still owed;
+//                                       cleared once the balances agree. Absent on
+//                                       mappings created before this existed, which
+//                                       reads as "nothing owed" — the right answer
+//                                       for an account that already synced.)
 //
 // users[] — at most one row: { client_user_id, plaid_user_id }
 const dbStructure = { mappings: [], users: [] };

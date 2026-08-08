@@ -12,14 +12,24 @@ function getSecret(name) {
   return process.env[name];
 }
 
+// parseInt would read "3131abc" as 3131 and "80.9" as 80. These come from the
+// environment, where a typo should fail loudly in the validators below rather
+// than silently resolve to something close; NaN is what makes them fail.
+// An unset *or empty* variable falls back, as `||` did before: writing `PORT=`
+// in a .env file is a normal way to say "use the default".
+function parseIntegerEnv(value, fallback) {
+  const raw = value || fallback;
+  return /^-?\d+$/.test(raw.trim()) ? Number(raw) : NaN;
+}
+
 const config = {
   debug: process.env.DEBUG?.toLowerCase() === 'true',
   cronSchedule: process.env.CRON_SCHEDULE || '0 */6 * * *',
-  port: parseInt(process.env.PORT || '3131', 10),
+  port: parseIntegerEnv(process.env.PORT, '3131'),
   // How long to let an in-flight sync finish after SIGTERM. Deliberately longer
   // than Docker's default 10s stop timeout, which is too short for a sync to
   // finish in; the shipped compose file raises stop_grace_period to match.
-  shutdownGraceMs: parseInt(process.env.SHUTDOWN_GRACE_MS || '25000', 10),
+  shutdownGraceMs: parseIntegerEnv(process.env.SHUTDOWN_GRACE_MS, '25000'),
   dbFile: process.env.DB_FILE || '/data/sync-files/db.json',
   plaid: {
     environment: process.env.PLAID_ENV || 'sandbox',
@@ -71,8 +81,8 @@ function validateCronSchedule() {
   }
 }
 
-// parseInt yields NaN for anything non-numeric, and app.listen(NaN) quietly
-// binds a random free port instead of failing.
+// parseIntegerEnv yields NaN for anything that isn't a whole number, and
+// app.listen(NaN) quietly binds a random free port instead of failing.
 function validatePort() {
   if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
     fail(`Invalid PORT: "${process.env.PORT}". Must be an integer between 1 and 65535.`);

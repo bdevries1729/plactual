@@ -167,19 +167,32 @@ async function applyModifications(actualAccountId, modified) {
 // month's history, so book the difference as a "Starting Balance" transaction to
 // line it up with the balance Plaid reports. Returns the number of transactions
 // added.
+//
+// Whether this still needs doing is tracked on the mapping itself, as
+// `starting_balance_date`: set when the Actual account is created, cleared only
+// once the balances agree. Keying it off `isNewAccount` instead would allow
+// exactly one attempt — the Actual account exists from then on, so a run that
+// couldn't finish would leave the account permanently out of step with the bank
+// with nothing but a single log line to say so.
 async function adjustStartingBalance(mapping, plaidAccount) {
-  const { actual_account_id: actualAccountId, account_name: accountName } = mapping;
+  const {
+    plaid_account_id: plaidAccountId,
+    actual_account_id: actualAccountId,
+    account_name: accountName,
+    starting_balance_date: startingBalanceDate,
+  } = mapping;
 
   // `balances.current` can be null, and plaidAccount itself is missing whenever
-  // the item wasn't reconciled this run (a login-required item contributes no
-  // accounts). Either way there's nothing to line the balance up against, so
-  // skip rather than doing arithmetic on it and booking a NaN transaction —
-  // loudly, because the account is left not matching the bank.
+  // the item wasn't reconciled this run — a login-required item contributes no
+  // accounts, and neither does one whose reconcile failed for a transient
+  // reason. Either way there's nothing to line the balance up against, so leave
+  // the flag set and try again next run rather than doing arithmetic on it and
+  // booking a NaN transaction.
   const plaidCurrent = plaidAccount?.balances?.current;
   if (plaidCurrent == null) {
     console.error(
-      `  ! No Plaid balance available for "${accountName}"; skipped the starting-balance ` +
-        `adjustment, so its Actual balance will not match the bank until you correct it.`
+      `  ! No Plaid balance available for "${accountName}"; its Actual balance will not match ` +
+        `the bank until a later sync completes the starting-balance adjustment.`
     );
     return 0;
   }
@@ -191,7 +204,11 @@ async function adjustStartingBalance(mapping, plaidAccount) {
 
   const actualBalance = await api.getAccountBalance(actualAccountId);
   const diff = targetBalance - actualBalance;
-  if (diff === 0) return 0;
+  if (diff === 0) {
+    // Already reconciled — nothing to book, and nothing left to retry.
+    await setMappingFields(plaidAccountId, { starting_balance_date: null });
+    return 0;
+  }
 
   if (config.debug) {
     console.log(
@@ -204,13 +221,19 @@ async function adjustStartingBalance(mapping, plaidAccount) {
   await api.addTransactions(actualAccountId, [
     {
       account: actualAccountId,
-      date: toDateString(firstOfMonth()),
+      // The date the Actual account was created, not today's: a retry that only
+      // succeeds a month later would otherwise file the adjustment after the
+      // transactions it is meant to precede.
+      date: startingBalanceDate,
       amount: diff,
       payee_name: 'Starting Balance',
       category: categories.find((c) => c.name === 'Starting Balances')?.id,
       cleared: true,
     },
   ]);
+  // Cleared last: anything above throwing must leave it set so the next run
+  // picks the job back up.
+  await setMappingFields(plaidAccountId, { starting_balance_date: null });
   return 1;
 }
 
@@ -247,18 +270,6 @@ async function syncAccount(mapping, isNewAccount, plaidAccounts) {
     changes.modified = changes.modified.filter((tx) => tx.amount != null);
   }
 
-  if (isNewAccount) {
-    const cutoff = toDateString(firstOfMonth());
-    const before = changes.added.length;
-    changes.added = changes.added.filter((tx) => tx.date >= cutoff);
-    if (config.debug) {
-      console.log(
-        `Filtered ${before - changes.added.length} historical transactions ` +
-          `because this is a new account.`
-      );
-    }
-  }
-
   if (config.debug) {
     console.log(`\nPlaid transactions fetched for plaid_account_id ${plaidAccountId}\n`, changes);
   }
@@ -275,13 +286,29 @@ async function syncAccount(mapping, isNewAccount, plaidAccounts) {
   summary.modified = modified.count;
   failures.push(...modified.failures);
 
-  const toImport = [...modified.notYetImported, ...changes.added].map((tx) =>
-    plaidToActualTransaction(actualAccountId, tx)
-  );
+  // Modifications we couldn't find in Actual are imported as additions, so the
+  // new-account cutoff is applied to the combined list rather than to
+  // `changes.added` alone — otherwise history could still reach a brand-new
+  // account through that path.
+  let toImport = [...modified.notYetImported, ...changes.added];
+  if (isNewAccount) {
+    const cutoff = toDateString(firstOfMonth());
+    const before = toImport.length;
+    toImport = toImport.filter((tx) => tx.date >= cutoff);
+    if (config.debug) {
+      console.log(
+        `Filtered ${before - toImport.length} historical transactions ` +
+          `because this is a new account.`
+      );
+    }
+  }
+
   if (toImport.length > 0) {
-    const imported = await api.importTransactions(actualAccountId, toImport, {
-      reimportDeleted: false,
-    });
+    const imported = await api.importTransactions(
+      actualAccountId,
+      toImport.map((tx) => plaidToActualTransaction(actualAccountId, tx)),
+      { reimportDeleted: false }
+    );
     if (config.debug) console.log('Import result:\n', imported);
     summary.added = imported.added.length;
     summary.modified += imported.updated.length;
@@ -299,7 +326,9 @@ async function syncAccount(mapping, isNewAccount, plaidAccounts) {
 
   await setMappingFields(plaidAccountId, { cursor: changes.nextCursor });
 
-  if (isNewAccount) {
+  // Runs off the mapping's own flag rather than isNewAccount, so a run that
+  // cannot finish the adjustment leaves it pending for the next one.
+  if (mapping.starting_balance_date) {
     const plaidAccount = plaidAccounts.find((a) => a.account_id === plaidAccountId);
     summary.added += await adjustStartingBalance(mapping, plaidAccount);
   }
@@ -330,6 +359,8 @@ async function syncMapping(mapping, actualAccounts, plaidAccounts) {
       await setMappingFields(mapping.plaid_account_id, {
         actual_account_id: actualAccountId,
         cursor: null,
+        // Pending until adjustStartingBalance succeeds; see the note there.
+        starting_balance_date: toDateString(firstOfMonth()),
       });
     }
 

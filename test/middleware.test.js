@@ -2,8 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   refuseCrossSiteWrites,
-  securityHeaders,
-  CONTENT_SECURITY_POLICY,
+  createSecurityHeaders,
+  buildContentSecurityPolicy,
 } from '../src/middleware.js';
 
 // Minimal stand-ins for Express's req/res: the middleware only reads headers
@@ -34,17 +34,32 @@ function run(req) {
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 describe('securityHeaders', () => {
-  function headersFor() {
+  const policy = buildContentSecurityPolicy('sandbox');
+
+  function directivesOf(csp) {
+    return new Map(
+      csp.split('; ').map((d) => {
+        const [name, ...values] = d.split(' ');
+        return [name, values];
+      })
+    );
+  }
+
+  function headersFor(plaidEnv = 'sandbox') {
     const set = {};
     let nexted = false;
-    securityHeaders({}, { setHeader: (k, v) => (set[k] = v) }, () => (nexted = true));
+    createSecurityHeaders(plaidEnv)(
+      {},
+      { setHeader: (k, v) => (set[k] = v) },
+      () => (nexted = true)
+    );
     return { set, nexted };
   }
 
   it('sets the policy and the companion headers, then continues', () => {
     const { set, nexted } = headersFor();
     assert.equal(nexted, true);
-    assert.equal(set['Content-Security-Policy'], CONTENT_SECURITY_POLICY);
+    assert.equal(set['Content-Security-Policy'], policy);
     assert.equal(set['X-Content-Type-Options'], 'nosniff');
     assert.equal(set['Referrer-Policy'], 'no-referrer');
     assert.equal(set['X-Frame-Options'], 'DENY');
@@ -54,12 +69,7 @@ describe('securityHeaders', () => {
   // browser: with any of them missing or narrower, Link fails to load or open.
   // Tighten them only after re-testing that flow.
   it('allows exactly what Plaid Link and the webfonts need', () => {
-    const directives = new Map(
-      CONTENT_SECURITY_POLICY.split('; ').map((d) => {
-        const [name, ...values] = d.split(' ');
-        return [name, values];
-      })
-    );
+    const directives = directivesOf(policy);
 
     assert.deepEqual(directives.get('script-src'), ["'self'", 'https://cdn.plaid.com']);
     // Link opens link.html from the same host in an iframe.
@@ -68,25 +78,43 @@ describe('securityHeaders', () => {
     assert.deepEqual(directives.get('font-src'), ['https://fonts.gstatic.com']);
   });
 
+  // link-initialize.js calls the Plaid API from the page itself, so the origin
+  // it calls has to follow PLAID_ENV rather than being hard-coded.
+  it('lets the page reach the Plaid API for the configured environment', () => {
+    assert.deepEqual(directivesOf(policy).get('connect-src'), [
+      "'self'",
+      'https://sandbox.plaid.com',
+    ]);
+    assert.deepEqual(directivesOf(buildContentSecurityPolicy('production')).get('connect-src'), [
+      "'self'",
+      'https://production.plaid.com',
+    ]);
+  });
+
+  it('falls back to the production origin for an unrecognised environment', () => {
+    // config.js rejects anything but sandbox/production, so this is a
+    // belt-and-braces default rather than a reachable state.
+    assert.deepEqual(directivesOf(buildContentSecurityPolicy(undefined)).get('connect-src'), [
+      "'self'",
+      'https://production.plaid.com',
+    ]);
+  });
+
   it('keeps the restrictive defaults that make the rest meaningful', () => {
     for (const directive of [
       "default-src 'self'",
-      "connect-src 'self'",
       "base-uri 'none'",
       "form-action 'none'",
       "frame-ancestors 'none'",
       "object-src 'none'",
     ]) {
-      assert.ok(
-        CONTENT_SECURITY_POLICY.includes(directive),
-        `policy should contain "${directive}"`
-      );
+      assert.ok(policy.includes(directive), `policy should contain "${directive}"`);
     }
   });
 
   it("does not resort to 'unsafe-inline' or 'unsafe-eval'", () => {
-    assert.ok(!CONTENT_SECURITY_POLICY.includes('unsafe-inline'));
-    assert.ok(!CONTENT_SECURITY_POLICY.includes('unsafe-eval'));
+    assert.ok(!policy.includes('unsafe-inline'));
+    assert.ok(!policy.includes('unsafe-eval'));
   });
 });
 

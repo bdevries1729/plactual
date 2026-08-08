@@ -59,7 +59,10 @@ router.get('/mappings', (req, res) => {
 
 router.patch('/mappings/:plaid_account_id/sync', async (req, res) => {
   const { plaid_account_id: plaidAccountId } = req.params;
-  const { sync } = req.body;
+  // body-parser leaves req.body undefined when a request arrives with neither
+  // Content-Length nor Transfer-Encoding, so destructuring it directly turns a
+  // malformed request into a 500. Every handler that reads a body guards it.
+  const { sync } = req.body ?? {};
   if (typeof sync !== 'boolean') throw httpError(400, 'sync must be a boolean');
 
   const changed = await updateMappings(
@@ -104,7 +107,7 @@ router.post('/create_link_token', async (req, res) => {
 });
 
 router.post('/create_link_token_update', async (req, res) => {
-  const { item_id: itemId } = req.body;
+  const { item_id: itemId } = req.body ?? {};
   if (!itemId) throw httpError(400, 'item_id required');
 
   const mapping = db.data.mappings.find((m) => m.item_id === itemId);
@@ -118,7 +121,7 @@ router.post('/create_link_token_update', async (req, res) => {
 });
 
 router.post('/exchange_public_token', async (req, res) => {
-  const { public_token: publicToken } = req.body;
+  const { public_token: publicToken } = req.body ?? {};
   if (!publicToken) throw httpError(400, 'public_token required');
 
   const exchangeRes = await plaid.itemPublicTokenExchange({ public_token: publicToken });

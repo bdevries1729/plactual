@@ -205,7 +205,7 @@ restarted. Use `/api/status` to see whether those two are actually up.
 2. On each sync (scheduled or manual), Plactual first checks for any accounts it hasn't seen yet at your linked institutions and creates mappings for them.
 3. For every mapping with syncing enabled, it creates the corresponding account in Actual if it doesn't exist yet, then pulls new, modified, and removed transactions from Plaid using a per-account cursor.
 4. Transactions are imported into Actual keyed by the Plaid transaction ID (`imported_id`), so re-running a sync won't create duplicates. If any part of a sync fails, the cursor is left untouched and the whole diff is retried on the next run.
-5. For a newly created account, history is trimmed to the current month and a "Starting Balance" transaction is added so the Actual balance matches Plaid's reported balance.
+5. For a newly created account, history is trimmed to the current month and a "Starting Balance" transaction is added so the Actual balance matches Plaid's reported balance. If that adjustment can't be made on the first run — Plaid reports no balance for the account, say — it stays pending on the mapping and is retried on later syncs, still dated to the month the account was created.
 
 If an institution needs you to log in again, Plaid returns `ITEM_LOGIN_REQUIRED`. Plactual flags the affected accounts and the UI shows a **Reconnect** button that runs Plaid Link in update mode.
 

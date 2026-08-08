@@ -2,6 +2,7 @@ import plaid from './plaid.js';
 import { config } from './config.js';
 import db from './db.js';
 import { getUserItems } from './user.js';
+import { redact } from './redact.js';
 
 // Plaid signals a stale bank login with this code. It is a normal, expected
 // state rather than a failure: the affected mappings get flagged so the UI can
@@ -26,7 +27,7 @@ async function getItemAndAccounts(accessToken, accountIds) {
     access_token: accessToken,
     account_ids: accountIds,
   });
-  if (config.debug) console.log('\nAccounts associated with token:\n', response.data);
+  if (config.debug) console.log('\nAccounts associated with token:\n', redact(response.data));
   return { accounts: response.data.accounts, item: response.data.item };
 }
 
@@ -59,15 +60,20 @@ async function createAccountMappings(accessToken, accountIds) {
 // Picks up accounts opened at an already-linked institution since the last run.
 async function reconcileItem(item) {
   const mappingWithItem = db.data.mappings.find((m) => m.item_id === item.item_id);
-  if (!mappingWithItem) {
-    throw new Error(`Could not find mapping with item ${item.item_id}.`);
+  // Plaid knows this item but we hold no access token for it — a db.json that
+  // was deleted or restored from an older copy while the Plaid user survived.
+  // There is nothing to reconcile against and nothing here can recover it, so
+  // warn and skip: throwing would make every /mappings/refresh fail from now
+  // on, taking the items that *are* fine down with it.
+  if (!mappingWithItem?.access_token) {
+    console.warn(
+      `No access token stored for Plaid item ${item.item_id}; skipping it. ` +
+        `Re-link the institution to sync its accounts again.`
+    );
+    return [];
   }
 
   const accessToken = mappingWithItem.access_token;
-  if (!accessToken) {
-    throw new Error(`Could not find access token for item ${item.item_id}.`);
-  }
-
   const { accounts } = await getItemAndAccounts(accessToken);
   const unmapped = accounts
     .filter((a) => !db.data.mappings.some((m) => m.plaid_account_id === a.account_id))

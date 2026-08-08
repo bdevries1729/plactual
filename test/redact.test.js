@@ -32,11 +32,13 @@ describe('redact', () => {
       access_token: 'a',
       public_token: 'b',
       link_token: 'c',
-      client_id: 'd',
-      secret: 'e',
-      password: 'f',
+      // Only legacy Plaid integrations receive one; masked anyway.
+      user_token: 'd',
+      client_id: 'e',
+      secret: 'f',
+      password: 'g',
     };
-    assert.deepEqual(Object.values(redact(all)), Array(6).fill('***'));
+    assert.deepEqual(Object.values(redact(all)), Array(7).fill('***'));
   });
 
   it('leaves everything else untouched', () => {
