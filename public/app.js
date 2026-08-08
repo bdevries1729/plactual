@@ -19,9 +19,8 @@ const lastSeen = { server: null, plaid: null, actual: null };
 async function api(path, { method = 'GET', body } = {}) {
   const response = await fetch(`/api${path}`, {
     method,
-    // Sent on every write, even the body-less ones: the server refuses writes
-    // that aren't declared as JSON, which is what keeps a cross-site form from
-    // reaching this API.
+    // On every write, even the body-less ones: the server refuses writes that
+    // aren't declared as JSON.
     headers: method === 'GET' ? undefined : { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -201,8 +200,8 @@ async function startUpdateMode(itemId) {
   }
 }
 
-// A link token is spent once Link succeeds, so this re-runs after every
-// successful link to leave a usable handler behind for the next institution.
+// A link token is spent once Link succeeds, so this re-runs after each one to
+// leave a usable handler behind for the next institution.
 async function initPlaid() {
   try {
     const { link_token: linkToken } = await api('/create_link_token', { method: 'POST' });
@@ -247,10 +246,10 @@ function logSpan(className, text) {
 function syncResultLine(result) {
   const line = document.createElement('div');
   if (result.error) {
-    line.append(logSpan('log-err', `✕ ${result.mapping.account_name}: ${result.error}`));
+    line.append(logSpan('log-err', `✕ ${result.account_name}: ${result.error}`));
   } else {
     line.append(
-      logSpan('log-ok', `✓ ${result.mapping.account_name}`),
+      logSpan('log-ok', `✓ ${result.account_name}`),
       logSpan(
         'log-dim',
         `  +${result.added} added  ~${result.modified} modified  -${result.removed} removed`

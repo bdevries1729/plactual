@@ -1,24 +1,16 @@
-import plaid from './plaid.js';
+import plaid, { isLoginRequiredError } from './plaid.js';
 import { config } from './config.js';
 import db from './db.js';
 import { getUserItems } from './user.js';
 import { redact } from './redact.js';
 
-// Plaid signals a stale bank login with this code. It is a normal, expected
-// state rather than a failure: the affected mappings get flagged so the UI can
-// offer Plaid Link's update mode.
-function isLoginRequiredError(error) {
-  return error?.response?.data?.error_code === 'ITEM_LOGIN_REQUIRED';
-}
-
 async function flagLoginRequired(itemId) {
-  await db.update(({ mappings }) => {
-    mappings
-      .filter((m) => m.item_id === itemId)
-      .forEach((m) => {
-        m.login_required = true;
-      });
-  });
+  await db.updateMappings(
+    (m) => m.item_id === itemId,
+    (m) => {
+      m.login_required = true;
+    }
+  );
 }
 
 // Omit accountIds to get every account behind the token.
@@ -31,40 +23,68 @@ async function getItemAndAccounts(accessToken, accountIds) {
   return { accounts: response.data.accounts, item: response.data.item };
 }
 
-// Omit accountIds to map every account behind the token.
-async function createAccountMappings(accessToken, accountIds) {
-  const { accounts, item } = await getItemAndAccounts(accessToken, accountIds);
-
-  const newMappings = accounts.map((a) => ({
+// Writes the given Plaid accounts to the database and returns the stored
+// mappings. Separate from the fetch above so a caller that already has the
+// accounts doesn't ask Plaid for them twice.
+async function saveAccountMappings(item, accounts, accessToken) {
+  // Belongs to the link rather than the account: re-linking issues a fresh
+  // item_id and access token for the same accounts.
+  const link = {
     institution_id: item.institution_id,
     institution_name: item.institution_name,
     item_id: item.item_id,
     access_token: accessToken,
-    account_name: a.name,
-    // Raw Plaid values. Actual has no account type field, so these are never
-    // sent to it; they're kept as a durable, provider-agnostic record in case
-    // it reintroduces account types with a taxonomy of its own.
-    type: a.type,
-    subtype: a.subtype,
-    plaid_account_id: a.account_id,
-    actual_account_id: null, // populated by the first sync, which creates the Actual account
-    cursor: null,
-    sync: true,
     login_required: false,
-  }));
+  };
 
-  await db.update(({ mappings }) => mappings.push(...newMappings));
-  return newMappings;
+  const saved = [];
+  await db.update(({ mappings }) => {
+    for (const account of accounts) {
+      const fromPlaid = {
+        account_name: account.name,
+        // Raw Plaid values, kept for reference. Actual has no type field.
+        type: account.type,
+        subtype: account.subtype,
+      };
+
+      // Re-linking a bank the user already has (rather than using Link's update
+      // mode) returns the same accounts behind a new item. Adopting the token on
+      // the existing row keeps its actual_account_id and cursor; a second row
+      // would sync everything twice and duplicate the account in Actual.
+      const existing = mappings.find((m) => m.plaid_account_id === account.account_id);
+      if (existing) {
+        saved.push(Object.assign(existing, link, fromPlaid));
+        continue;
+      }
+
+      const mapping = {
+        ...link,
+        ...fromPlaid,
+        plaid_account_id: account.account_id,
+        actual_account_id: null, // the first sync creates the Actual account
+        cursor: null,
+        sync: true,
+      };
+      mappings.push(mapping);
+      saved.push(mapping);
+    }
+  });
+
+  return saved;
+}
+
+// Omit accountIds to map every account behind the token.
+async function createAccountMappings(accessToken, accountIds) {
+  const { accounts, item } = await getItemAndAccounts(accessToken, accountIds);
+  return saveAccountMappings(item, accounts, accessToken);
 }
 
 // Picks up accounts opened at an already-linked institution since the last run.
 async function reconcileItem(item) {
   const mappingWithItem = db.data.mappings.find((m) => m.item_id === item.item_id);
-  // Plaid knows this item but we hold no access token for it — a db.json that
-  // was deleted or restored from an older copy while the Plaid user survived.
-  // There is nothing to reconcile against and nothing here can recover it, so
-  // warn and skip: throwing would make every /mappings/refresh fail from now
-  // on, taking the items that *are* fine down with it.
+  // Plaid knows this item but we hold no token for it — a db.json restored from
+  // an older copy while the Plaid user survived. Nothing here can recover it,
+  // and throwing would take every healthy item down with it.
   if (!mappingWithItem?.access_token) {
     console.warn(
       `No access token stored for Plaid item ${item.item_id}; skipping it. ` +
@@ -74,14 +94,19 @@ async function reconcileItem(item) {
   }
 
   const accessToken = mappingWithItem.access_token;
-  const { accounts } = await getItemAndAccounts(accessToken);
-  const unmapped = accounts
-    .filter((a) => !db.data.mappings.some((m) => m.plaid_account_id === a.account_id))
-    .map((a) => a.account_id);
+  const { accounts, item: fetchedItem } = await getItemAndAccounts(accessToken);
+  const unmapped = accounts.filter(
+    (a) => !db.data.mappings.some((m) => m.plaid_account_id === a.account_id)
+  );
 
   if (unmapped.length > 0) {
-    if (config.debug) console.log('Adding mapping(s) for missing accounts: ', unmapped);
-    await createAccountMappings(accessToken, unmapped);
+    if (config.debug) {
+      console.log(
+        'Adding mapping(s) for missing accounts: ',
+        unmapped.map((a) => a.account_id)
+      );
+    }
+    await saveAccountMappings(fetchedItem, unmapped, accessToken);
   }
 
   return accounts;
@@ -95,10 +120,10 @@ async function ensureAllAccountMappings() {
       try {
         return { item_id: item.item_id, success: true, accounts: await reconcileItem(item) };
       } catch (err) {
+        // Needing a re-login is a known state, not a refresh failure.
         if (isLoginRequiredError(err)) {
           console.error(`Item login required for item ${item.item_id}`);
           await flagLoginRequired(item.item_id);
-          // Needing a re-login is a known state, not a refresh failure.
           return { item_id: item.item_id, success: true, accounts: [] };
         }
         console.error(`Error processing item ${item.item_id}:`, err);
@@ -115,4 +140,4 @@ async function ensureAllAccountMappings() {
   };
 }
 
-export { createAccountMappings, ensureAllAccountMappings, flagLoginRequired, isLoginRequiredError };
+export { createAccountMappings, saveAccountMappings, ensureAllAccountMappings, flagLoginRequired };

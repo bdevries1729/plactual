@@ -15,19 +15,16 @@ async function createPlaidUser() {
   return plaidUserId;
 }
 
-// Shared between concurrent callers. Two browser tabs both booting the UI each
-// ask for a link token, and without this they would each create a Plaid user
-// and the second would overwrite users[0]. Items linked under the lost user
-// disappear from getUserItems(), which silently stops account discovery for
-// them — masked by the fact that their existing mappings keep syncing off the
-// access token they already hold.
+// Shared between concurrent callers: two browser tabs booting the UI would
+// otherwise create a user each, and the second would overwrite users[0]. Items
+// linked under the lost user silently drop out of getUserItems().
 let creating = null;
 
 async function getOrCreatePlaidUserId() {
   const existing = db.data.users[0]?.plaid_user_id;
   if (existing) return existing;
 
-  // Cleared on both paths so a failed attempt doesn't poison later ones.
+  // Cleared on both paths, so a failed attempt doesn't poison later ones.
   creating ??= createPlaidUser().finally(() => {
     creating = null;
   });
@@ -35,10 +32,12 @@ async function getOrCreatePlaidUserId() {
 }
 
 async function getUserItems() {
-  if (db.data.users.length === 0) {
-    return [];
-  }
-  const response = await plaid.userItemsGet({ user_id: db.data.users[0].plaid_user_id });
+  // No user yet means nothing has ever been linked; asking Plaid with an
+  // undefined user_id would be an error response rather than an empty list.
+  const plaidUserId = db.data.users[0]?.plaid_user_id;
+  if (!plaidUserId) return [];
+
+  const response = await plaid.userItemsGet({ user_id: plaidUserId });
   if (config.debug) console.log('Get user items response:\n', redact(response.data));
   return response.data.items;
 }

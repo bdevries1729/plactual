@@ -1,21 +1,13 @@
 import api from '@actual-app/api';
-import plaid from './plaid.js';
+import plaid, { isLoginRequiredError, plaidErrorMessage } from './plaid.js';
 import db from './db.js';
-import {
-  plaidToActualTransaction,
-  toActualAmount,
-  toDateString,
-  firstOfMonth,
-  addDays,
-} from './helpers.js';
-import { ensureAllAccountMappings, flagLoginRequired, isLoginRequiredError } from './accounts.js';
+import { plaidToActualTransaction, toActualAmount, toDateString, firstOfMonth } from './helpers.js';
+import { ensureAllAccountMappings, flagLoginRequired } from './accounts.js';
+import { withBudget } from './actual.js';
 import { config, ensureDataDirs } from './config.js';
 
 const FETCH_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1000;
-// Plaid's `modified` entries carry no Actual id, so we search a window either
-// side of the transaction date for the row we previously imported.
-const MODIFIED_SEARCH_WINDOW_DAYS = 7;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -24,11 +16,6 @@ class ItemLoginRequiredError extends Error {
     super('ITEM_LOGIN_REQUIRED', options);
     this.name = 'ItemLoginRequiredError';
   }
-}
-
-// Axios errors stringify to "{}", so pull out what Plaid actually said.
-function plaidErrorMessage(error) {
-  return error?.response?.data?.error_message || error?.message || 'unknown error';
 }
 
 // Run operations independently so one failure doesn't starve the rest.
@@ -40,13 +27,12 @@ async function settleAll(promises) {
   };
 }
 
-// db.data.mappings holds the very objects callers iterate over, so this both
-// updates the caller's mapping in place and persists it.
-async function setMappingFields(plaidAccountId, fields) {
-  await db.update(({ mappings }) => {
-    const mapping = mappings.find((m) => m.plaid_account_id === plaidAccountId);
-    if (mapping) Object.assign(mapping, fields);
-  });
+// Updates the caller's own mapping object in place as well as persisting it.
+function setMappingFields(plaidAccountId, fields) {
+  return db.updateMappings(
+    (m) => m.plaid_account_id === plaidAccountId,
+    (m) => Object.assign(m, fields)
+  );
 }
 
 // Pass initialCursor=null to fetch every transaction Plaid has for the account.
@@ -54,7 +40,7 @@ async function fetchPlaidTransactions(accountId, accessToken, initialCursor) {
   let lastError;
 
   for (let attempt = 1; attempt <= FETCH_ATTEMPTS; attempt++) {
-    // Each attempt restarts from the original cursor, so start with a clean slate.
+    // Each attempt restarts from the original cursor.
     const changes = { added: [], removed: [], modified: [], nextCursor: initialCursor };
     try {
       let hasMore;
@@ -67,9 +53,8 @@ async function fetchPlaidTransactions(accountId, accessToken, initialCursor) {
         changes.added.push(...data.added);
         changes.modified.push(...data.modified);
         changes.removed.push(...data.removed);
-        // Only advance on a real cursor. A null cursor means "fetch all
-        // history" downstream, so overwriting with an empty one would silently
-        // restart the account from scratch on the next run.
+        // Only advance on a real cursor: a null one means "fetch all history"
+        // downstream, which would restart the account from scratch.
         if (data.next_cursor) changes.nextCursor = data.next_cursor;
         hasMore = data.has_more;
         // Paging on an unchanged cursor would loop forever against Plaid.
@@ -79,8 +64,7 @@ async function fetchPlaidTransactions(accountId, accessToken, initialCursor) {
       } while (hasMore);
       return changes;
     } catch (error) {
-      // A stale login won't fix itself by retrying; surface it immediately so
-      // the item gets flagged for reconnection.
+      // A stale login won't fix itself by retrying.
       if (isLoginRequiredError(error)) throw new ItemLoginRequiredError({ cause: error });
 
       lastError = error;
@@ -92,8 +76,7 @@ async function fetchPlaidTransactions(accountId, accessToken, initialCursor) {
     }
   }
 
-  // Give up loudly. Returning empty data here would look like a clean sync and
-  // hide the failure from both the logs and the UI.
+  // Returning empty data here would look like a clean sync and hide the failure.
   throw new Error(
     `Could not fetch Plaid transactions for account ${accountId} after ` +
       `${FETCH_ATTEMPTS} attempts: ${plaidErrorMessage(lastError)}`,
@@ -101,79 +84,68 @@ async function fetchPlaidTransactions(accountId, accessToken, initialCursor) {
   );
 }
 
-// Plaid's `removed` entries only carry the Plaid transaction_id, which we store
-// as Actual's `imported_id`. deleteTransaction needs Actual's own id, so resolve
-// imported_id -> id first.
-async function removeTransactions(actualAccountId, removed) {
-  if (removed.length === 0) return { count: 0, failures: [] };
+// Plaid's `removed` and `modified` entries carry only the Plaid transaction_id,
+// stored on the Actual side as `imported_id`. Resolves a batch of them to Actual
+// ids in one query.
+async function findByImportedId(actualAccountId, plaidTransactionIds) {
+  if (plaidTransactionIds.length === 0) return new Map();
 
-  const importedIds = removed.map((tx) => tx.transaction_id);
   const { data: rows } = await api.aqlQuery(
     api
       .q('transactions')
-      .filter({ account: actualAccountId, imported_id: { $oneof: importedIds } })
+      .filter({ account: actualAccountId, imported_id: { $oneof: plaidTransactionIds } })
       .select(['id', 'imported_id'])
   );
+  return new Map(rows.map((row) => [row.imported_id, row.id]));
+}
 
-  if (rows.length !== removed.length && config.debug) {
+async function removeTransactions(actualAccountId, removed) {
+  const ids = await findByImportedId(
+    actualAccountId,
+    removed.map((tx) => tx.transaction_id)
+  );
+
+  if (ids.size !== removed.length && config.debug) {
     console.log(
-      `${removed.length - rows.length} removed transaction(s) were not found in Actual ` +
+      `${removed.length - ids.size} removed transaction(s) were not found in Actual ` +
         `(already gone or never imported).`
     );
   }
 
-  return settleAll(rows.map((row) => api.deleteTransaction(row.id)));
+  return settleAll([...ids.values()].map((id) => api.deleteTransaction(id)));
 }
 
 // Modified transactions we can't find in Actual yet are returned as
 // `notYetImported` so the caller can import them as additions instead.
 async function applyModifications(actualAccountId, modified) {
-  const notYetImported = [];
-  const found = [];
-
-  const lookups = await Promise.allSettled(
-    modified.map(async (tx) => {
-      const date = new Date(tx.date);
-      const txList = await api.getTransactions(
-        actualAccountId,
-        toDateString(addDays(date, -MODIFIED_SEARCH_WINDOW_DAYS)),
-        toDateString(addDays(date, MODIFIED_SEARCH_WINDOW_DAYS))
-      );
-      const id = txList.find((t) => t.imported_id === tx.transaction_id)?.id;
-      if (id) found.push({ id, tx });
-      else notYetImported.push(tx);
-    })
+  const ids = await findByImportedId(
+    actualAccountId,
+    modified.map((tx) => tx.transaction_id)
   );
 
   const applied = await settleAll(
-    found.map(({ id, tx }) => {
-      // payee_name is only accepted when creating a transaction, not updating one.
-      const { payee_name: _payeeName, ...fields } = plaidToActualTransaction(actualAccountId, tx);
-      return api.updateTransaction(id, fields);
-    })
+    modified
+      .filter((tx) => ids.has(tx.transaction_id))
+      .map((tx) => {
+        // payee_name is only accepted when creating a transaction, not updating one.
+        const { payee_name: _payeeName, ...fields } = plaidToActualTransaction(actualAccountId, tx);
+        return api.updateTransaction(ids.get(tx.transaction_id), fields);
+      })
   );
 
   return {
-    count: applied.count,
-    failures: [
-      ...lookups.filter((r) => r.status === 'rejected').map((r) => r.reason),
-      ...applied.failures,
-    ],
-    notYetImported,
+    ...applied,
+    notYetImported: modified.filter((tx) => !ids.has(tx.transaction_id)),
   };
 }
 
-// A freshly created Actual account starts at zero and only gets the current
-// month's history, so book the difference as a "Starting Balance" transaction to
-// line it up with the balance Plaid reports. Returns the number of transactions
-// added.
+// A new Actual account starts at zero with only the current month's history, so
+// book the difference as a "Starting Balance" transaction. Returns how many
+// transactions were added.
 //
-// Whether this still needs doing is tracked on the mapping itself, as
-// `starting_balance_date`: set when the Actual account is created, cleared only
-// once the balances agree. Keying it off `isNewAccount` instead would allow
-// exactly one attempt — the Actual account exists from then on, so a run that
-// couldn't finish would leave the account permanently out of step with the bank
-// with nothing but a single log line to say so.
+// Still-owed is tracked on the mapping as `starting_balance_date` rather than
+// off `isNewAccount`, which would allow exactly one attempt: a run that couldn't
+// finish would leave the account permanently out of step with the bank.
 async function adjustStartingBalance(mapping, plaidAccount) {
   const {
     plaid_account_id: plaidAccountId,
@@ -182,12 +154,9 @@ async function adjustStartingBalance(mapping, plaidAccount) {
     starting_balance_date: startingBalanceDate,
   } = mapping;
 
-  // `balances.current` can be null, and plaidAccount itself is missing whenever
-  // the item wasn't reconciled this run — a login-required item contributes no
-  // accounts, and neither does one whose reconcile failed for a transient
-  // reason. Either way there's nothing to line the balance up against, so leave
-  // the flag set and try again next run rather than doing arithmetic on it and
-  // booking a NaN transaction.
+  // Both the balance and the account itself can be missing — an item that
+  // wasn't reconciled this run contributes no accounts. Leave the flag set and
+  // retry next run rather than booking a NaN transaction.
   const plaidCurrent = plaidAccount?.balances?.current;
   if (plaidCurrent == null) {
     console.error(
@@ -205,7 +174,7 @@ async function adjustStartingBalance(mapping, plaidAccount) {
   const actualBalance = await api.getAccountBalance(actualAccountId);
   const diff = targetBalance - actualBalance;
   if (diff === 0) {
-    // Already reconciled — nothing to book, and nothing left to retry.
+    // Already reconciled: nothing to book, nothing left to retry.
     await setMappingFields(plaidAccountId, { starting_balance_date: null });
     return 0;
   }
@@ -221,9 +190,8 @@ async function adjustStartingBalance(mapping, plaidAccount) {
   await api.addTransactions(actualAccountId, [
     {
       account: actualAccountId,
-      // The date the Actual account was created, not today's: a retry that only
-      // succeeds a month later would otherwise file the adjustment after the
-      // transactions it is meant to precede.
+      // When the account was created, not today: a retry that succeeds a month
+      // later must not file the adjustment after what it should precede.
       date: startingBalanceDate,
       amount: diff,
       payee_name: 'Starting Balance',
@@ -231,8 +199,7 @@ async function adjustStartingBalance(mapping, plaidAccount) {
       cleared: true,
     },
   ]);
-  // Cleared last: anything above throwing must leave it set so the next run
-  // picks the job back up.
+  // Cleared last, so a throw above leaves the job for the next run.
   await setMappingFields(plaidAccountId, { starting_balance_date: null });
   return 1;
 }
@@ -249,17 +216,14 @@ async function syncAccount(mapping, isNewAccount, plaidAccounts) {
   const summary = { added: 0, removed: 0, modified: 0, error: null };
   const changes = await fetchPlaidTransactions(plaidAccountId, accessToken, cursor);
 
-  // The fetch succeeding proves the login works, which is worth recording even
-  // when the reconnect happened outside the UI — the UI's resolve_login call is
-  // otherwise the only thing that ever clears this.
+  // A successful fetch proves the login works, even if the reconnect happened
+  // outside the UI — resolve_login is otherwise the only thing that clears this.
   if (mapping.login_required) {
     await setMappingFields(plaidAccountId, { login_required: false });
   }
 
-  // Plaid always sends an amount, but a missing one cannot be converted to
-  // Actual's integer cents and would import as $0.00. Drop those rows without
-  // counting them as failures: a failure holds the cursor back, and an amount
-  // that never arrives would stall the account on the same rows forever.
+  // A missing amount would import as $0.00. Dropped rather than failed: a
+  // failure holds the cursor back, stalling the account on the same rows.
   const unusable = [...changes.added, ...changes.modified].filter((tx) => tx.amount == null);
   if (unusable.length > 0) {
     console.error(
@@ -274,8 +238,7 @@ async function syncAccount(mapping, isNewAccount, plaidAccounts) {
     console.log(`\nPlaid transactions fetched for plaid_account_id ${plaidAccountId}\n`, changes);
   }
 
-  // Attempt every phase independently so a failure in one doesn't starve the
-  // others. Errors are collected and dealt with at the end.
+  // Every phase runs independently; errors are dealt with at the end.
   const failures = [];
 
   const removed = await removeTransactions(actualAccountId, changes.removed);
@@ -286,10 +249,8 @@ async function syncAccount(mapping, isNewAccount, plaidAccounts) {
   summary.modified = modified.count;
   failures.push(...modified.failures);
 
-  // Modifications we couldn't find in Actual are imported as additions, so the
-  // new-account cutoff is applied to the combined list rather than to
-  // `changes.added` alone — otherwise history could still reach a brand-new
-  // account through that path.
+  // Modifications we couldn't find are imported as additions, so the new-account
+  // cutoff applies to the combined list — history could otherwise slip in here.
   let toImport = [...modified.notYetImported, ...changes.added];
   if (isNewAccount) {
     const cutoff = toDateString(firstOfMonth());
@@ -315,9 +276,8 @@ async function syncAccount(mapping, isNewAccount, plaidAccounts) {
     failures.push(...imported.errors);
   }
 
-  // If any phase failed, leave the cursor untouched so the next sync re-fetches
-  // and retries the whole diff (every operation above is idempotent), and
-  // surface the error so the caller doesn't report a false success.
+  // Leave the cursor untouched so the next run retries the whole diff; every
+  // operation above is idempotent.
   if (failures.length > 0) {
     console.error(`  ✗ Errors syncing "${accountName}":`, failures);
     summary.error = 'Sync completed with errors; will retry on next run.';
@@ -326,8 +286,6 @@ async function syncAccount(mapping, isNewAccount, plaidAccounts) {
 
   await setMappingFields(plaidAccountId, { cursor: changes.nextCursor });
 
-  // Runs off the mapping's own flag rather than isNewAccount, so a run that
-  // cannot finish the adjustment leaves it pending for the next one.
   if (mapping.starting_balance_date) {
     const plaidAccount = plaidAccounts.find((a) => a.account_id === plaidAccountId);
     summary.added += await adjustStartingBalance(mapping, plaidAccount);
@@ -340,18 +298,25 @@ async function syncAccount(mapping, isNewAccount, plaidAccounts) {
   return summary;
 }
 
-// Creates the Actual account if it's missing, then syncs. Never throws: a
-// failing account is reported alongside the ones that worked.
+// Creates the Actual account if missing, then syncs. Never throws: a failing
+// account is reported alongside the ones that worked.
 async function syncMapping(mapping, actualAccounts, plaidAccounts) {
+  // Only these two fields: the mapping also holds the institution's access
+  // token, and /sync serialises these results straight to the browser.
+  const identity = {
+    account_name: mapping.account_name,
+    plaid_account_id: mapping.plaid_account_id,
+  };
+  const nothingDone = { added: 0, modified: 0, removed: 0 };
+
   try {
     const actualAccountExists = actualAccounts.some((a) => a.id === mapping.actual_account_id);
     const isNewAccount = !mapping.actual_account_id || !actualAccountExists;
 
     if (isNewAccount) {
       if (config.debug) console.log(`Creating Actual account for ${mapping.account_name}...`);
-      // No `type` is passed: Actual's account model has no such field and
-      // createAccount silently drops it. The raw Plaid type/subtype live on
-      // the mapping instead (see accounts.js).
+      // No `type`: Actual's account model has no such field and drops it. The
+      // raw Plaid type/subtype live on the mapping instead.
       const actualAccountId = await api.createAccount(
         { name: mapping.account_name, offbudget: false },
         0
@@ -359,23 +324,22 @@ async function syncMapping(mapping, actualAccounts, plaidAccounts) {
       await setMappingFields(mapping.plaid_account_id, {
         actual_account_id: actualAccountId,
         cursor: null,
-        // Pending until adjustStartingBalance succeeds; see the note there.
+        // Pending until adjustStartingBalance succeeds.
         starting_balance_date: toDateString(firstOfMonth()),
       });
     }
 
-    return { mapping, ...(await syncAccount(mapping, isNewAccount, plaidAccounts)) };
+    return { ...identity, ...(await syncAccount(mapping, isNewAccount, plaidAccounts)) };
   } catch (err) {
     console.error(`  ✗ Failed "${mapping.account_name}": ${err.message}`);
     if (err instanceof ItemLoginRequiredError) await flagLoginRequired(mapping.item_id);
-    return { mapping, added: 0, modified: 0, removed: 0, error: err.message };
+    return { ...identity, ...nothingDone, error: err.message };
   }
 }
 
 let syncRunning = false;
 
-// Read by the shutdown handler, which waits for an in-flight sync rather than
-// killing it partway.
+// Read by the shutdown handler, which waits for an in-flight sync.
 function isSyncRunning() {
   return syncRunning;
 }
@@ -386,7 +350,7 @@ async function runSync() {
     return null;
   }
 
-  // Re-create the data dirs in case something removed them since startup.
+  // In case something removed them since startup.
   ensureDataDirs();
 
   syncRunning = true;
@@ -405,17 +369,10 @@ async function runSync() {
     }
 
     console.log(`Syncing ${mappings.length} mappings`);
-    await api.init({
-      verbose: config.debug,
-      dataDir: config.actual.dataDir,
-      serverURL: config.actual.serverUrl,
-      password: config.actual.password,
-    });
 
-    const results = [];
-    try {
-      await api.downloadBudget(config.actual.budgetId);
+    const results = await withBudget(async () => {
       const actualAccounts = await api.getAccounts();
+      const collected = [];
 
       for (const mapping of mappings) {
         if (!mapping.sync) {
@@ -424,12 +381,11 @@ async function runSync() {
           }
           continue;
         }
-        results.push(await syncMapping(mapping, actualAccounts, plaidAccounts));
+        collected.push(await syncMapping(mapping, actualAccounts, plaidAccounts));
       }
-    } finally {
-      // Always release the Actual connection, even if downloadBudget failed.
-      await api.shutdown();
-    }
+
+      return collected;
+    });
 
     console.log('=== Sync complete ===\n');
     return { results };

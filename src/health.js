@@ -8,9 +8,8 @@ const cachedHealth = { plaid: 'unknown', actual: 'unknown', lastCheck: 0 };
 
 async function probePlaid() {
   try {
-    // The timeout matters as much as the call: without it a hung connection
-    // holds /api/status open indefinitely, and the UI adds another poll every
-    // few seconds.
+    // Without the timeout a hung connection holds /api/status open while the UI
+    // adds another poll every few seconds.
     await plaid.categoriesGet({}, { timeout: PROBE_TIMEOUT_MS });
     return 'up';
   } catch {
@@ -23,9 +22,8 @@ async function probeActual() {
     const response = await fetch(config.actual.serverUrl, {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
-    // fetch only rejects on a transport failure, so the status has to be looked
-    // at too: a 4xx still proves something is answering on that URL, but a 5xx
-    // is a server that cannot serve, which is what "down" means here.
+    // fetch only rejects on a transport failure. A 4xx still proves something
+    // is answering; a 5xx is a server that cannot serve.
     return response.status < 500 ? 'up' : 'down';
   } catch {
     return 'down';
@@ -40,9 +38,8 @@ async function probe() {
   return cachedHealth;
 }
 
-// Shared by everyone who asks while a probe is running. lastCheck is only
-// written once both probes settle, so without this the UI's polling would start
-// a fresh pair of requests every few seconds for as long as one hangs.
+// lastCheck is only written once both probes settle, so callers that arrive
+// meanwhile share this rather than starting a fresh pair of requests.
 let inFlight = null;
 
 export async function checkExternalHealth() {

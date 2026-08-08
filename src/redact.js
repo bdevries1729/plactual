@@ -1,14 +1,8 @@
-// Keys whose values are credentials rather than data. Plaid responses and our
-// own request bodies both carry them, and DEBUG logging prints both verbatim,
-// so everything logged goes through redact() first.
-//
-// `access_token` is the important one: it is the long-lived credential for a
-// linked bank, and it appears in the token exchange response.
-//
-// `user_token` is not one this app can produce — /user/create only returns it
-// for integrations predating the user_id API, and this one passes user_id
-// everywhere — but the whole point of the set is that nothing has to be
-// re-audited when a response shape changes.
+// Keys whose values are credentials rather than data. DEBUG logging prints Plaid
+// responses and request bodies verbatim, so everything logged passes through
+// redact() first. `access_token` is the important one — the long-lived
+// credential for a linked bank. The rest are here so a change in response shape
+// doesn't need re-auditing.
 const SECRET_KEYS = new Set([
   'access_token',
   'public_token',
@@ -21,8 +15,7 @@ const SECRET_KEYS = new Set([
 
 const MASK = '***';
 
-// Returns a deep copy with every secret value masked. Primitives pass through,
-// so this is safe to call on anything loggable.
+// Deep copy with every secret value masked. Safe on any value.
 function redact(value) {
   if (Array.isArray(value)) return value.map(redact);
   if (value === null || typeof value !== 'object') return value;

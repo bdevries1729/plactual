@@ -11,7 +11,7 @@ import { redact } from './redact.js';
 
 const router = express.Router();
 
-// Thrown errors are formatted by the error middleware in index.js.
+// Thrown errors are formatted by the error handler in middleware.js.
 function httpError(status, message) {
   const error = new Error(message);
   error.status = status;
@@ -22,20 +22,8 @@ function httpError(status, message) {
 const toPublicMappings = (mappings) =>
   mappings.map(({ access_token: _accessToken, ...rest }) => rest);
 
-// Returns how many mappings were touched so callers can 404 on zero.
-async function updateMappings(matches, apply) {
-  let changed = 0;
-  await db.update(({ mappings }) => {
-    mappings.filter(matches).forEach((mapping) => {
-      apply(mapping);
-      changed++;
-    });
-  });
-  return changed;
-}
-
-// `overrides` carries what differs between linking a new institution
-// (`products`) and re-authenticating an existing one (`access_token`).
+// `overrides` is what differs between linking a new institution (`products`)
+// and re-authenticating an existing one (`access_token`).
 async function createLinkToken(overrides) {
   const plaidUserId = await getOrCreatePlaidUserId();
   if (config.debug) console.log(`Plaid user_id: ${plaidUserId}`);
@@ -59,13 +47,12 @@ router.get('/mappings', (req, res) => {
 
 router.patch('/mappings/:plaid_account_id/sync', async (req, res) => {
   const { plaid_account_id: plaidAccountId } = req.params;
-  // body-parser leaves req.body undefined when a request arrives with neither
-  // Content-Length nor Transfer-Encoding, so destructuring it directly turns a
-  // malformed request into a 500. Every handler that reads a body guards it.
+  // body-parser leaves req.body undefined for a request with no Content-Length
+  // or Transfer-Encoding, so every handler that reads a body guards it.
   const { sync } = req.body ?? {};
   if (typeof sync !== 'boolean') throw httpError(400, 'sync must be a boolean');
 
-  const changed = await updateMappings(
+  const changed = await db.updateMappings(
     (m) => m.plaid_account_id === plaidAccountId,
     (m) => {
       m.sync = sync;
@@ -78,7 +65,7 @@ router.patch('/mappings/:plaid_account_id/sync', async (req, res) => {
 router.post('/mappings/:item_id/resolve_login', async (req, res) => {
   const { item_id: itemId } = req.params;
 
-  const changed = await updateMappings(
+  const changed = await db.updateMappings(
     (m) => m.item_id === itemId,
     (m) => {
       m.login_required = false;
@@ -91,8 +78,8 @@ router.post('/mappings/:item_id/resolve_login', async (req, res) => {
 router.post('/mappings/refresh', async (req, res) => {
   const { success, errors } = await ensureAllAccountMappings();
   if (!success) {
-    // Answered here rather than thrown: the per-item `errors` detail is more
-    // useful than the single message the generic error handler can carry.
+    // Answered here rather than thrown: the error handler can only carry a
+    // single message, and the per-item detail is more useful.
     return res.status(500).json({ ok: false, error: 'Failed to process some mappings', errors });
   }
 
@@ -115,7 +102,7 @@ router.post('/create_link_token_update', async (req, res) => {
     throw httpError(404, 'Mapping or access token not found for item_id');
   }
 
-  // No `products` in update mode — Plaid rejects the combination.
+  // Plaid rejects `products` in update mode.
   const linkToken = await createLinkToken({ access_token: mapping.access_token });
   res.json({ link_token: linkToken });
 });
@@ -125,7 +112,7 @@ router.post('/exchange_public_token', async (req, res) => {
   if (!publicToken) throw httpError(400, 'public_token required');
 
   const exchangeRes = await plaid.itemPublicTokenExchange({ public_token: publicToken });
-  // Redacted: this response carries the access_token for the linked bank.
+  // The response carries the access_token for the linked bank.
   if (config.debug) console.log('Token exchange response data:\n', redact(exchangeRes.data));
   const { access_token: accessToken, item_id: itemId } = exchangeRes.data;
 
@@ -134,17 +121,16 @@ router.post('/exchange_public_token', async (req, res) => {
 });
 
 router.post('/sync', async (req, res) => {
-  const result = await runSync();
   // runSync returns null when a sync is already in flight.
+  const result = await runSync();
   if (!result) throw httpError(409, 'A sync is already in progress');
 
   if (config.debug) console.log('Sync result:\n', result);
   res.json({ ok: true, results: result.results });
 });
 
-// Liveness only — deliberately makes no external calls, so the container's
-// HEALTHCHECK can poll it as often as it likes without touching Plaid or Actual.
-// Use /status for whether those two are actually reachable.
+// Liveness only: makes no external calls, so the container HEALTHCHECK can poll
+// it freely. /status reports whether Plaid and Actual are reachable.
 router.get('/health', (req, res) => {
   res.json({ ok: true });
 });

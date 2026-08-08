@@ -4,14 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Plactual</title>
-    <!-- Neither third-party resource below carries a Subresource Integrity hash,
-         and that is deliberate: both are mutable by design, so a pinned hash
-         would break this page on the vendor's next deploy. Plaid ships updates
-         to the `stable` channel URL (and does not support self-hosting it), and
-         the Google Fonts stylesheet varies by user agent. What constrains them
-         instead is the Content-Security-Policy set in src/middleware.js, which
-         permits scripts only from cdn.plaid.com, styles only from
-         fonts.googleapis.com, and fonts only from fonts.gstatic.com. -->
+    <!-- No Subresource Integrity on either third party below: both are mutable
+         by design (Plaid ships updates to the `stable` URL, and the Google Fonts
+         stylesheet varies by user agent), so a pinned hash would break this page
+         on their next deploy. The Content-Security-Policy in src/middleware.js
+         constrains them instead. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"

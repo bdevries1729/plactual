@@ -4,17 +4,20 @@ import {
   refuseCrossSiteWrites,
   createSecurityHeaders,
   buildContentSecurityPolicy,
+  createRequestLogger,
+  apiNotFound,
+  createErrorHandler,
 } from '../src/middleware.js';
 
-// Minimal stand-ins for Express's req/res: the middleware only reads headers
-// (case-insensitively, as req.get does) and either calls next() or answers.
+// Stand-in for Express's req: the middleware only reads headers, and does so
+// case-insensitively, as req.get does.
 function makeReq(method, headers = {}) {
   const lower = new Map(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
   return { method, get: (name) => lower.get(name.toLowerCase()) };
 }
 
-function run(req) {
-  const result = { nexted: false, status: null, body: null };
+// Collects what a middleware answered with.
+function makeRes(result) {
   const res = {
     status(code) {
       result.status = code;
@@ -25,10 +28,20 @@ function run(req) {
       return res;
     },
   };
-  refuseCrossSiteWrites(req, res, () => {
+  return res;
+}
+
+function run(req) {
+  const result = { nexted: false, status: null, body: null };
+  refuseCrossSiteWrites(req, makeRes(result), () => {
     result.nexted = true;
   });
   return result;
+}
+
+function makeLog() {
+  const lines = [];
+  return { lines, log: (...args) => lines.push(args), error: (...args) => lines.push(args) };
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
@@ -65,9 +78,8 @@ describe('securityHeaders', () => {
     assert.equal(set['X-Frame-Options'], 'DENY');
   });
 
-  // These four directives were verified against the real Plaid Link flow in a
-  // browser: with any of them missing or narrower, Link fails to load or open.
-  // Tighten them only after re-testing that flow.
+  // Verified against the real Link flow in a browser: any of these missing or
+  // narrower and Link fails to load or open. Re-test that flow before tightening.
   it('allows exactly what Plaid Link and the webfonts need', () => {
     const directives = directivesOf(policy);
 
@@ -78,8 +90,6 @@ describe('securityHeaders', () => {
     assert.deepEqual(directives.get('font-src'), ['https://fonts.gstatic.com']);
   });
 
-  // link-initialize.js calls the Plaid API from the page itself, so the origin
-  // it calls has to follow PLAID_ENV rather than being hard-coded.
   it('lets the page reach the Plaid API for the configured environment', () => {
     assert.deepEqual(directivesOf(policy).get('connect-src'), [
       "'self'",
@@ -92,8 +102,7 @@ describe('securityHeaders', () => {
   });
 
   it('falls back to the production origin for an unrecognised environment', () => {
-    // config.js rejects anything but sandbox/production, so this is a
-    // belt-and-braces default rather than a reachable state.
+    // config.js rejects anything else, so this is a default, not a live path.
     assert.deepEqual(directivesOf(buildContentSecurityPolicy(undefined)).get('connect-src'), [
       "'self'",
       'https://production.plaid.com',
@@ -200,5 +209,104 @@ describe('refuseCrossSiteWrites', () => {
     // curl and the cron-free CLI cases: nothing to compare, and a browser
     // always sends Origin on a cross-site request.
     assert.equal(run(makeReq('POST', { ...JSON_HEADERS, Host: 'localhost:3131' })).nexted, true);
+  });
+});
+
+describe('createRequestLogger', () => {
+  const req = { method: 'POST', originalUrl: '/api/exchange_public_token' };
+
+  it('logs the method and path, then continues', () => {
+    const log = makeLog();
+    let nexted = false;
+    createRequestLogger({ log })({ ...req, body: {} }, {}, () => (nexted = true));
+
+    assert.equal(nexted, true);
+    assert.match(log.lines[0][0], /POST \/api\/exchange_public_token/);
+  });
+
+  it('redacts credentials out of the body it logs', () => {
+    // This route posts a Plaid public_token.
+    const log = makeLog();
+    createRequestLogger({ log })(
+      { ...req, body: { public_token: 'public-sandbox-secret', item_id: 'item-1' } },
+      {},
+      () => {}
+    );
+
+    const [, body] = log.lines[1];
+    assert.equal(body.public_token, '***');
+    assert.equal(body.item_id, 'item-1');
+  });
+
+  it('says nothing about a body that is not there', () => {
+    // body-parser leaves req.body undefined for a request with no content length.
+    const log = makeLog();
+    createRequestLogger({ log })({ ...req, body: undefined }, {}, () => {});
+    assert.equal(log.lines.length, 1);
+  });
+});
+
+describe('apiNotFound', () => {
+  it('answers with JSON naming the path, since fetch() is the only caller', () => {
+    const result = {};
+    apiNotFound({ method: 'GET', originalUrl: '/api/nope' }, makeRes(result));
+
+    assert.equal(result.status, 404);
+    assert.deepEqual(result.body, { ok: false, error: 'Cannot GET /api/nope' });
+  });
+});
+
+describe('createErrorHandler', () => {
+  const req = { method: 'POST', originalUrl: '/api/sync' };
+
+  function handle(err, log = makeLog()) {
+    const result = {};
+    createErrorHandler({ log })(err, req, makeRes(result), () => {});
+    return { ...result, logged: log.lines };
+  }
+
+  it('uses the status a route asked for', () => {
+    const err = Object.assign(new Error('A sync is already in progress'), { status: 409 });
+    const result = handle(err);
+
+    assert.equal(result.status, 409);
+    assert.deepEqual(result.body, { ok: false, error: 'A sync is already in progress' });
+  });
+
+  it('treats anything unexpected as a 500', () => {
+    assert.equal(handle(new Error('boom')).status, 500);
+  });
+
+  it('ignores a status that is not an HTTP error code', () => {
+    // res.status() would send nonsense, or throw outright on a NaN.
+    for (const status of [200, 999, 'ECONNREFUSED', NaN, null]) {
+      assert.equal(handle(Object.assign(new Error('boom'), { status })).status, 500, `${status}`);
+    }
+  });
+
+  it('surfaces what Plaid said, not the axios error wrapping it', () => {
+    const err = { response: { data: { error_message: 'public token has expired' } } };
+    assert.equal(handle(err).body.error, 'public token has expired');
+  });
+
+  it('logs the Plaid response body with its credentials masked', () => {
+    const err = {
+      response: { data: { error_message: 'nope', access_token: 'access-sandbox-secret' } },
+    };
+    const logged = JSON.stringify(handle(err).logged);
+
+    assert.equal(logged.includes('access-sandbox-secret'), false);
+    assert.ok(logged.includes('***'));
+  });
+
+  it('logs our own errors whole, since the stack is what makes them debuggable', () => {
+    const err = new Error('boom');
+    const [, logged] = handle(err).logged[0];
+    assert.equal(logged, err);
+  });
+
+  it('always answers something a client can parse', () => {
+    // Including a thrown non-Error.
+    assert.deepEqual(handle('a string').body, { ok: false, error: 'unknown error' });
   });
 });

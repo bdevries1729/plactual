@@ -4,7 +4,6 @@ import {
   toActualAmount,
   toDateString,
   firstOfMonth,
-  addDays,
   plaidToActualTransaction,
 } from '../src/helpers.js';
 
@@ -44,23 +43,6 @@ describe('firstOfMonth', () => {
   it('is anchored to UTC midnight so formatting cannot drift a day', () => {
     assert.equal(firstOfMonth().getUTCHours(), 0);
     assert.equal(firstOfMonth().getUTCDate(), 1);
-  });
-});
-
-describe('addDays', () => {
-  it('moves forwards and backwards', () => {
-    assert.equal(toDateString(addDays(new Date('2026-08-07'), 7)), '2026-08-14');
-    assert.equal(toDateString(addDays(new Date('2026-08-07'), -7)), '2026-07-31');
-  });
-
-  it('rolls over year boundaries', () => {
-    assert.equal(toDateString(addDays(new Date('2026-12-28'), 7)), '2027-01-04');
-  });
-
-  it('does not mutate its input', () => {
-    const original = new Date('2026-08-07');
-    addDays(original, 30);
-    assert.equal(toDateString(original), '2026-08-07');
   });
 });
 

@@ -143,7 +143,7 @@ The Actual Budget cache in `ACTUAL_DATA_DIR` is disposable — it's re-downloade
 
 ### Startup validation
 
-On startup Plactual validates the cron expression and the port, checks that the Plaid environment and credentials are present, and connects to Actual Budget to confirm that `ACTUAL_BUDGET_ID` is set and matches an existing budget. If any check fails, it logs the reason and exits.
+On startup Plactual validates the cron expression and the port, checks that the Plaid environment and credentials are present, and connects to Actual Budget to confirm that `ACTUAL_BUDGET_ID` is set and matches an existing budget. If any check fails, it logs the reason and exits — reporting every problem it found at once, rather than one per restart.
 
 ## Security
 
@@ -209,6 +209,8 @@ restarted. Use `/api/status` to see whether those two are actually up.
 
 If an institution needs you to log in again, Plaid returns `ITEM_LOGIN_REQUIRED`. Plactual flags the affected accounts and the UI shows a **Reconnect** button that runs Plaid Link in update mode.
 
+Linking a bank you already have — rather than using **Reconnect** — gives Plactual a fresh Plaid item and access token for accounts it already knows. The existing mappings adopt the new token and keep their Actual account and sync cursor, so nothing is imported twice and no duplicate account appears in Actual.
+
 ## API
 
 The web UI is built on a small JSON API under `/api`. Access tokens are never returned in any response.
@@ -258,9 +260,14 @@ If you want to run or develop Plactual locally without Docker:
 Other scripts:
 
 - `npm start` - Runs the server with plain `node`.
-- `npm test` - Runs the unit tests (`node --test`, no test framework needed).
+- `npm test` - Runs the tests (`node --test`, no test framework needed).
+- `npm run test:coverage` - Runs them with Node's coverage reporter.
 - `npm run lint` - Runs ESLint.
 - `npm run format` - Formats code with Prettier.
+
+The tests need no Plaid account and no Actual server: the Plaid client and the
+Actual API are stubbed with `node:test`'s own `mock.method`, and each test opens
+its own temporary `db.json`.
 
 ### Testing against the Plaid sandbox
 
@@ -273,25 +280,33 @@ sync without waiting on a real bank:
 
 ### Project layout
 
-| File                | Purpose                                                    |
-| ------------------- | ---------------------------------------------------------- |
-| `src/index.js`      | Express app, middleware, cron scheduler, entry point.      |
-| `src/config.js`     | Environment/secret loading and startup validation.         |
-| `src/middleware.js` | Security headers and the cross-site write guard.           |
-| `src/redact.js`     | Masks credentials in anything that gets logged.            |
-| `src/shutdown.js`   | Signal handling: finish an in-flight sync, then exit.      |
-| `src/routes.js`     | The `/api` routes.                                         |
-| `src/sync.js`       | Plaid → Actual transaction sync.                           |
-| `src/accounts.js`   | Creating and reconciling Plaid ↔ Actual account mappings.  |
-| `src/plaid.js`      | Configured Plaid API client.                               |
-| `src/user.js`       | Plaid user creation and item lookup.                       |
-| `src/db.js`         | lowdb JSON store (`mappings`, `users`).                    |
-| `src/health.js`     | Cached health checks for Plaid and Actual.                 |
-| `src/helpers.js`    | Plaid → Actual transaction/amount/date conversion.         |
-| `public/index.html` | Web UI markup and the `<template>`s the account list uses. |
-| `public/styles.css` | Web UI styles.                                             |
-| `public/app.js`     | Web UI behaviour.                                          |
-| `test/`             | Unit tests for the pure conversion helpers.                |
+| File                | Purpose                                                         |
+| ------------------- | --------------------------------------------------------------- |
+| `src/index.js`      | Entry point: startup sequence, cron scheduler, signal handling. |
+| `src/app.js`        | Assembles the Express app from the middleware and routes.       |
+| `src/config.js`     | Environment/secret loading and configuration validation.        |
+| `src/middleware.js` | Security headers, cross-site write guard, error handling.       |
+| `src/redact.js`     | Masks credentials in anything that gets logged.                 |
+| `src/shutdown.js`   | Signal handling: finish an in-flight sync, then exit.           |
+| `src/routes.js`     | The `/api` routes.                                              |
+| `src/sync.js`       | Plaid → Actual transaction sync.                                |
+| `src/accounts.js`   | Creating and reconciling Plaid ↔ Actual account mappings.       |
+| `src/plaid.js`      | Configured Plaid API client, plus its error helpers.            |
+| `src/actual.js`     | Actual Budget connection handling and startup check.            |
+| `src/user.js`       | Plaid user creation and item lookup.                            |
+| `src/db.js`         | lowdb JSON store (`mappings`, `users`).                         |
+| `src/health.js`     | Cached health checks for Plaid and Actual.                      |
+| `src/helpers.js`    | Plaid → Actual transaction/amount/date conversion.              |
+| `public/index.html` | Web UI markup and the `<template>`s the account list uses.      |
+| `public/styles.css` | Web UI styles.                                                  |
+| `public/app.js`     | Web UI behaviour.                                               |
+| `test/`             | One `*.test.js` per `src/` module.                              |
+
+Nothing in `src/` does any work when it is imported: opening the database,
+creating data directories and connecting to Actual are explicit steps that
+`src/index.js` runs in order. That is what lets the tests import any module —
+and assemble the whole app with `createApp()` — without a real Plaid account,
+an Actual server, or a listening socket.
 
 ## Releases
 
