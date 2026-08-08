@@ -40,6 +40,22 @@ tags = ["credential"]
     '''\$\{[^}]+\}''',
   ]
 
+  # Test fixtures. This rule matches on the variable name, so it cannot tell an
+  # invented value in a test from a real one, and the suite has to assign these
+  # variables to something. Rather than exempt test/ wholesale, this allows only
+  # values shaped like a hand-written fixture: lowercase words joined by hyphens
+  # ("client-id", "plaid-secret", "from-env"). A real client id or secret is a
+  # hex blob and does not survive that test, so pasting one into test/ still
+  # fails the scan. Keep new fixtures in this shape and they will pass; anything
+  # else is worth the second look the failure asks for.
+  [[rules.allowlists]]
+  condition = "AND"
+  # Anchored loosely on purpose: `gitleaks git` reports paths relative to the
+  # repository root, `gitleaks dir` reports them as given, often absolute.
+  paths = ['''(^|/)test/''']
+  regexTarget = "match"
+  regexes = ['''(?i)(?:PLAID_CLIENT_ID|PLAID_SECRET|ACTUAL_PASSWORD)\s*[:=]\s*['"]?[a-z]+(?:-[a-z0-9]+)+$''']
+
 [[allowlists]]
 description = """
 Two sandbox access tokens committed in 2026 (a hardcoded value in src/routes.js
