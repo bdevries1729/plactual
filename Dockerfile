@@ -2,7 +2,7 @@
 # touches the `navigator` global at module load time — Node only exposes it from
 # v21 (and `navigator.platform` from v21.2) — and by the language features used
 # here. This image tracks a newer line than that floor deliberately.
-FROM node:24-alpine
+FROM node:26-alpine
 
 WORKDIR /app
 
